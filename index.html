@@ -3,26 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy Policy</title>
+    <title>LLM Extension for Command Palette Privacy Policy</title>
+    <link rel="icon" type="image/png" href="favicon.png">
     <style>
         body {
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            text-align: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
+            font-family: sans-serif;
+            text-align: center;
+        }
+        main {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+        h2, h1 {
+            margin-bottom: 0;
+        }
+        footer {
+            padding: 1em 0;
+            width: 100%;
         }
     </style>
 </head>
 <body>
-    <h1>Privacy Policy</h1>
-    <h2>What user information do we collect?</h2>
-    <p>LLM Extension for Command Palette does not collect any user information to send to the developer in any mean.</p>
-    <h2>External Service Providers</h2>
-    <p>While the app does not collect user information to send to the developer, the app communicates with external service providers that are specified by the user, which may collect user information.</p>
-    <h2>Contact</h2>
-    <p>If you have any questions or concerns, you may contact the developer via email at lio@lioqing.com</p>
+    <main>
+        <img src="Logo.png" alt="LLM Extension for Command Palette Logo" style="width: 100px; height: 100px;">
+        <h1>Privacy Policy</h1>
+        <p>LLM Extension for Command Palette</p>
+        <h2>What User Information Does The Developer Collect?</h2>
+        <p>LLM Extension for Command Palette does not collect and send any user information to the developer of the app.</p>
+        <h2>External Service Providers</h2>
+        <p>The app communicates with external service providers that are specified by the user, which may collect user information.</p>
+        <h2>Contact</h2>
+        <p>If you have any questions or concerns, you may contact the developer via email at lio@lioqing.com</p>
+    </main>
+    <footer>© <span id="currentYear"></span>, Lio Qing</footer>
+    <script>
+        document.getElementById('currentYear').textContent = new Date().getFullYear();
+    </script>
 </body>
 </html>
