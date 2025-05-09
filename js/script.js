@@ -12,23 +12,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (theme === 'light') {
             body.classList.add('light-theme');
             if(lightThemeButton) lightThemeButton.classList.add('active');
-            localStorage.setItem('theme', 'light');
+            localStorage.setItem('llm-extension-for-cmd-pal-theme', 'light');
         } else if (theme === 'dark') {
             body.classList.add('dark-theme');
             if(darkThemeButton) darkThemeButton.classList.add('active');
-            localStorage.setItem('theme', 'dark');
+            localStorage.setItem('llm-extension-for-cmd-pal-theme', 'dark');
         } else { // System theme
             if(systemThemeButton) systemThemeButton.classList.add('active');
-            localStorage.setItem('theme', 'system');
+            localStorage.setItem('llm-extension-for-cmd-pal-theme', 'system');
             // CSS media queries will handle appearance for system theme
-            updateSystemButtonActiveState();
-        }
-    }
-
-    function updateSystemButtonActiveState() {
-        if (localStorage.getItem('theme') === 'system') {
-            buttons.forEach(btn => btn.classList.remove('active'));
-            if(systemThemeButton) systemThemeButton.classList.add('active');
         }
     }
 
@@ -42,19 +34,24 @@ document.addEventListener('DOMContentLoaded', () => {
         systemThemeButton.addEventListener('click', () => applyTheme('system'));
     }
 
-    const savedTheme = localStorage.getItem('theme') || 'system';
+    const savedTheme = localStorage.getItem('llm-extension-for-cmd-pal-theme') || 'system';
     applyTheme(savedTheme);
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-        if (localStorage.getItem('theme') === 'system') {
+        if (localStorage.getItem('llm-extension-for-cmd-pal-theme') === 'system') {
             applyTheme('system');
         }
     });
 
-    // Initial check for system theme button if system is default
-    if (savedTheme === 'system') {
-        updateSystemButtonActiveState();
-    }
+    // Listen for theme changes from other tabs/windows
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'llm-extension-for-cmd-pal-theme' && event.newValue) {
+            // Ensure the new value is one of the expected theme strings
+            if (['light', 'dark', 'system'].includes(event.newValue)) {
+                applyTheme(event.newValue);
+            }
+        }
+    });
 
     // Update current year in footer
     const currentYearSpan = document.getElementById('currentYear');
