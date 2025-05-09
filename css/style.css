@@ -1,0 +1,166 @@
+
+:root {
+    --background-color-light: #ffffff;
+    --text-color-light: #000000;
+    --link-color-light: #007bff;
+    --background-color-dark: #121212;
+    --text-color-dark: #e0e0e0;
+    --link-color-dark: #58a6ff;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    font-size: 1.2em;
+    font-family: sans-serif;
+    text-align: center;
+}
+
+body.light-theme {
+    background-color: var(--background-color-light);
+    color: var(--text-color-light);
+}
+
+body.light-theme a {
+    color: var(--link-color-light);
+}
+
+body.dark-theme {
+    background-color: var(--background-color-dark);
+    color: var(--text-color-dark);
+}
+
+body.dark-theme a {
+    color: var(--link-color-dark);
+}
+
+/* Default to light theme if no class and no system preference */
+body:not(.dark-theme):not(.light-theme) {
+    background-color: var(--background-color-light);
+    color: var(--text-color-light);
+}
+
+body:not(.dark-theme):not(.light-theme) a {
+    color: var(--link-color-light);
+}
+
+
+@media (prefers-color-scheme: dark) {
+    body:not(.light-theme):not(.dark-theme) { /* Apply system preference if no theme is explicitly set */
+        background-color: var(--background-color-dark);
+        color: var(--text-color-dark);
+    }
+    body:not(.light-theme):not(.dark-theme) a { /* Apply system preference if no theme is explicitly set */
+        color: var(--link-color-dark);
+    }
+}
+
+main {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 20px;
+    max-width: 800px;
+}
+
+.logo {
+    /* Specific dimensions might vary, keep them in individual files or use classes if they are standard */
+    margin-bottom: 1em;
+}
+
+h1, h2 {
+    margin-bottom: 0;
+}
+
+h1 {
+    margin-top: 0;
+}
+
+h2 {
+    margin-top: 1.5em;
+}
+
+p {
+    margin-top: 0.2em;
+    margin-bottom: 1em;
+    line-height: 1.6;
+}
+
+a {
+    font-size: 1em;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+footer {
+    padding: 1em 0;
+    width: 100%;
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.theme-toggle {
+    display: flex;
+    gap: 10px;
+}
+
+.theme-toggle button {
+    padding: 5px 10px;
+    border: 1px solid var(--text-color-light); /* Default border */
+    background-color: transparent;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+body.light-theme .theme-toggle button {
+    color: var(--text-color-light);
+    border-color: var(--text-color-light);
+}
+body.light-theme .theme-toggle button.active {
+    background-color: var(--text-color-light);
+    color: var(--background-color-light);
+}
+
+body.dark-theme .theme-toggle button {
+    color: var(--text-color-dark);
+    border-color: var(--text-color-dark);
+}
+body.dark-theme .theme-toggle button.active {
+    background-color: var(--text-color-dark);
+    color: var(--background-color-dark);
+}
+
+/* System preference styles for toggle buttons */
+@media (prefers-color-scheme: dark) {
+    body:not(.light-theme):not(.dark-theme) .theme-toggle button {
+        color: var(--text-color-dark);
+        border-color: var(--text-color-dark);
+    }
+    body:not(.light-theme):not(.dark-theme) .theme-toggle button.active {
+        background-color: var(--text-color-dark);
+        color: var(--background-color-dark);
+    }
+}
+
+@media (prefers-color-scheme: light) {
+    body:not(.light-theme):not(.dark-theme) .theme-toggle button {
+        color: var(--text-color-light);
+        border-color: var(--text-color-light);
+    }
+    body:not(.light-theme):not(.dark-theme) .theme-toggle button.active {
+        background-color: var(--text-color-light);
+        color: var(--background-color-light);
+    }
+}

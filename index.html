@@ -5,73 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Extension for Command Palette</title>
     <link rel="icon" type="image/png" href="favicon.png">
-    <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            font-size: 1.2em;
-            font-family: sans-serif;
-            text-align: center;
-        }
-        main {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            padding: 20px;
-            max-width: 800px;
-        }
-        .logo {
-            width: 120px; 
-            height: 120px;
-            margin-bottom: 1em;
-        }
-        h1, h2 {
-            margin-bottom: 0;
-        }
-        h1 {
-            margin-top: 0;
-        }
-        h2 {
-            margin-top: 1.5em;
-        }
-        p {
-            margin-top: 0.2em;
-            margin-bottom: 1em;
-            line-height: 1.6;
-        }
-        a {
-            font-size: 1em;
-            color: #007bff;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-        footer {
-            padding: 1em 0;
-            width: 100%;
-            margin-top: auto;
-        }
-    </style>
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
     <main>
-        <img src="Logo.png" alt="LLM Extension for Command Palette Logo" class="logo">
+        <img src="Logo.png" alt="LLM Extension for Command Palette Logo" class="logo logo-main" width="200" height="200">
         <h1>LLM Extension for Command Palette</h1>
         <br/>
         <p>An extension for <a href="https://learn.microsoft.com/en-us/windows/powertoys/command-palette/overview">PowerToys Command Palette</a> that allows you to chat with a large language model (LLM) directly.</p>
         <p><a href="https://github.com/LioQing/llm-extension-for-cmd-pal">GitHub Repository</a></p>
         <p><a href="privacy-policy/">Privacy Policy</a></p>
     </main>
-    <footer>© <span id="currentYear"></span>, <a href="https://lioqing.com">Lio Qing</a></footer>
-    <script>
-        document.getElementById('currentYear').textContent = new Date().getFullYear();
-    </script>
+    <footer>
+        <div class="theme-toggle">
+            <button id="theme-light">Light</button>
+            <button id="theme-dark">Dark</button>
+            <button id="theme-system">System</button>
+        </div>
+        <div>© <span id="currentYear"></span>, <a href="https://lioqing.com">Lio Qing</a></div>
+    </footer>
+    <script src="js/script.js"></script>
 </body>
 </html>

@@ -5,70 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Extension for Command Palette Privacy Policy</title>
     <link rel="icon" type="image/png" href="../favicon.png">
-    <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            font-size: 1.2em;
-            font-family: sans-serif;
-            text-align: center;
-        }
-        main {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            padding: 20px;
-            max-width: 800px;
-        }
-        .logo {
-            width: 80px; 
-            height: 80px;
-            margin-bottom: 1em;
-        }
-        h1, h2 {
-            margin-bottom: 0;
-        }
-        h1 {
-            margin-top: 0;
-        }
-        h2 {
-            margin-top: 1.5em;
-        }
-        p {
-            margin-top: 0.2em;
-            margin-bottom: 1em;
-            line-height: 1.6;
-        }
-        a {
-            font-size: 1em;
-            color: #007bff;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-        footer {
-            padding: 1em 0;
-            width: 100%;
-            margin-top: auto;
-        }
-    </style>
+    <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
     <main>
-        <img src="../Logo.png" alt="LLM Extension for Command Palette Logo" class="logo">
+        <img src="../Logo.png" alt="LLM Extension for Command Palette Logo" class="logo logo-privacy" width="80" height="80">
         <h1>Privacy Policy</h1>
         <p>For LLM Extension for Command Palette</p>
         <h2>What User Information Does The Developer Collect?</h2>
         <p>LLM Extension for Command Palette (hereinafter referred to as <i>the app</i>) <i>does not</i> collect and send any user information to the developer of the app.</p>
         <h2>Local Configurations</h2>
-        <p>The app stores user configurations locally on the device. These include settings, preferences, and API keys used to communicate with external service providers <i>as specified by the user on the app</i>. This information is stored locally and is not shared with the developer's servers.</p>
+        <p>The app stores user configurations locally on the device. These include settings, preferences, and API keys used to communicate with external service providers <i>as specified by the user on the app</i>. This information is stored locally and <i>is not</i> shared with the developer's servers.</p>
         <h2>External Service Providers</h2>
         <p>The app communicates with external service providers that are <i>specified by the user on the app</i>, which may collect user information. If the user wish to know what user information are collected by these external service providers, please visit the privacy policy of the corresponding services as selected by the user.</p>
         <h2>Contact</h2>
@@ -76,9 +23,14 @@
         <br/>
         <a href="javascript:history.back()">Back to Home</a>
     </main>
-    <footer>© <span id="currentYear"></span>, <a href="https://lioqing.com">Lio Qing</a></footer>
-    <script>
-        document.getElementById('currentYear').textContent = new Date().getFullYear();
-    </script>
+    <footer>
+        <div class="theme-toggle">
+            <button id="theme-light">Light</button>
+            <button id="theme-dark">Dark</button>
+            <button id="theme-system">System</button>
+        </div>
+        <div>© <span id="currentYear"></span>, <a href="https://lioqing.com">Lio Qing</a></div>
+    </footer>
+    <script src="../js/script.js"></script>
 </body>
 </html>
