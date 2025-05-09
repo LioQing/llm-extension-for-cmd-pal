@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "LlmExtension (Package)": {
+      "commandName": "MsixPackage",
+      "doNotLaunchApp": true
+    },
+    "LlmExtension (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
