@@ -144,7 +144,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     partial class OpenAIApiClient : OpenAIBaseApiClient, IApiClient
     {
         public OpenAIApiClient(Config config): base(
-            new ApiKeyCredential(config.ApiKey ?? throw new ServiceApiKeyException()),
+            new ApiKeyCredential(config.ApiKey ?? " "),
             new OpenAI.OpenAIClientOptions() { Endpoint = string.IsNullOrEmpty(config.Url) ? null : new Uri(config.Url) })
         { }
 
@@ -181,7 +181,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     {
         public AzureOpenAIApiClient(Config config) : base(
             new Uri(config.Url),
-            new ApiKeyCredential(config.ApiKey ?? throw new ServiceApiKeyException()))
+            new ApiKeyCredential(config.ApiKey ?? " "))
         { }
 
         public static IApiClient Create(Config config)
@@ -239,7 +239,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
     private readonly Client _client;
     private readonly IList<ChatMessage> _messages;
-    private readonly IDictionary<string, (string?, Func<string>, Func<(string, string)>?, Action<SendMessageCommand, object?>)> _commands;
+    private readonly IDictionary<string, (string?, Func<string>, Func<(string, string)>?, Action<SendMessageCommand, object?, string>)> _commands;
 
     public LlmExtensionPage()
     {
@@ -255,29 +255,26 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         };
         _client.ReinitializeApiClient();
         _messages = [new() { User = "", Assistant = "" }];
-        _commands = new Dictionary<string, (string?, Func<string>, Func<(string, string)>?, Action<SendMessageCommand, object?>)>()
+        _commands = new Dictionary<string, (string?, Func<string>, Func<(string, string)>?, Action<SendMessageCommand, object?, string>)>()
         {
             { "service", (
                 "<one-of-[ Ollama | OpenAI | AzureOpenAI ]>",
                 () => $"Set the API service to call (currently: {_client.Config.Service})",
                 null,
-                (sender, args) => {
-                    try
+                (sender, args, opts) => {
+                    Service? service = opts.ToLowerInvariant() switch
                     {
-                        Console.WriteLine(SearchText["/service ".Length..].ToLowerInvariant());
-                        _client.Config.Service = SearchText["/service ".Length..].ToLowerInvariant() switch
-                        {
-                            "ollama" => Service.Ollama,
-                            "openai" => Service.OpenAI,
-                            "azureopenai" => Service.AzureOpenAI,
-                            _ => throw new ArgumentException("Invalid service name")
-                        };
-                    }
-                    catch (ArgumentException) when (!_client.Config.Debug)
+                        "ollama" => Service.Ollama,
+                        "openai" => Service.OpenAI,
+                        "azureopenai" => Service.AzureOpenAI,
+                        _ => null,
+                    };
+
+                    if (service == null)
                     {
                         new ToastStatusMessage(new StatusMessage()
                         {
-                            Message = "Invalid service name, expected one of 'Ollama', 'OpenAI', 'AzureOpenAI'",
+                            Message = $"Invalid service '{opts}', expected one of 'Ollama', 'OpenAI', 'AzureOpenAI'",
                             State = MessageState.Error,
                         })
                         {
@@ -285,76 +282,41 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                         }.Show();
                         return;
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        new ToastStatusMessage(new StatusMessage()
-                        {
-                            Message = ex.ToString(),
-                            State = MessageState.Error,
-                        })
-                        {
-                            Duration = 10000,
-                        }.Show();
-                        return;
+                        _client.Config.Service = service ?? throw new ArgumentException();
                     }
 
-                    try
-                    {
-                        RefreshConfigs();
-                    }
-                    catch (ServiceApiKeyException) when (!_client.Config.Debug)
-                    {
-                        new ToastStatusMessage(new StatusMessage()
-                        {
-                            Message = "Please set the API key before setting to this service",
-                            State = MessageState.Error,
-                        })
-                        {
-                            Duration = 10000,
-                        }.Show();
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        new ToastStatusMessage(new StatusMessage()
-                        {
-                            Message = ex.ToString(),
-                            State = MessageState.Error,
-                        })
-                        {
-                            Duration = 10000,
-                        }.Show();
-                        return;
-                    }
+                    RefreshConfigs();
                 })
             },
-            { "clear", (null, () => $"Clear message history ({_messages.Count} message" + (_messages.Count > 1 ? "s" : "") + ")", null, (sender, args) => {
+            { "clear", (null, () => $"Clear message history ({_messages.Count} message" + (_messages.Count > 1 ? "s" : "") + ")", null, (sender, args, opts) => {
                 _messages.Clear();
                 _messages.Add(new() { User = "", Assistant = "" });
                 SearchText = "";
                 RaiseItemsChanged(_messages.Count);
             }) },
-            { "url", ("<url>", () => $"Set server URL (current: {_client.Config.Url})", null, (sender, args) =>
+            { "url", ("<url>", () => $"Set server URL (current: {_client.Config.Url})", null, (sender, args, opts) =>
             {
-                _client.Config.Url = SearchText["/url ".Length..];
+                _client.Config.Url = opts;
                 RefreshConfigs();
             }) },
-            { "model", ("<model-name>", () => $"Set the model to use (current: {_client.Config.Model})", null, (sender, args) =>
+            { "model", ("<model-name>", () => $"Set the model to use (current: {_client.Config.Model})", null, (sender, args, opts) =>
             {
-                _client.Config.Model = SearchText["/model ".Length..];
+                _client.Config.Model = opts;
                 RefreshConfigs();
             }) },
-            { "keepalive", ("<duration>", () => $"Set the keep-alive duration (Ollama only, current: {_client.Config.KeepAlive})", null, (sender, args) =>
+            { "keepalive", ("<duration>", () => $"Set the keep-alive duration (Ollama only, current: {_client.Config.KeepAlive})", null, (sender, args, opts) =>
             {
-                _client.Config.KeepAlive = SearchText["/keepalive ".Length..];
+                _client.Config.KeepAlive = opts;
                 RefreshConfigs();
             }) },
-            { "apikey", ("<api-key>", () => $"Set the API key (OpenAI or AzureOpenAI only)", null, (sender, args) =>
+            { "apikey", ("<api-key>", () => $"Set the API key (OpenAI or AzureOpenAI only)", null, (sender, args, opts) =>
             {
-                _client.Config.ApiKey = SearchText["/apikey ".Length..];
+                _client.Config.ApiKey = opts;
                 RefreshConfigs();
             }) },
-            { "detail", (null, () => $"Toggle full detailed response on the side (current: {_client.Config.Details})", null, (sender, args) =>
+            { "detail", (null, () => $"Toggle full detailed response on the side (current: {_client.Config.Details})", null, (sender, args, opts) =>
             {
                 _client.Config.Details = !_client.Config.Details;
                 RefreshConfigs();
@@ -363,9 +325,9 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 "<system-prompt>",
                 () => $"Set the system prompt",
                 () => ("Current System Prompt", _client.Config.System),
-                (sender, args) =>
+                (sender, args, opts) =>
                 {
-                    _client.Config.System = SearchText["/system ".Length..];
+                    _client.Config.System = opts;
                     RefreshConfigs();
                 }
             ) },
@@ -373,30 +335,34 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 "<history-count>",
                 () => $"Set the message history count (current: {_client.Config.History})",
                 null,
-                (sender, args) =>
+                (sender, args, opts) =>
                 {
                     try
                     {
-                        _client.Config.History = int.Parse(SearchText["/history ".Length..]);
+                        var count = int.Parse(opts);
+
+                        if (count <= 0)
+                        {
+                            new ToastStatusMessage(new StatusMessage()
+                            {
+                                Message = $"Invalid history count {count}, expected positive integer",
+                                State = MessageState.Error,
+                            })
+                            {
+                                Duration = 10000,
+                            }.Show();
+                            return;
+                        }
+
+                        _client.Config.History = count;
+
                         RefreshConfigs();
                     }
                     catch (FormatException) when (!_client.Config.Debug)
                     {
                         new ToastStatusMessage(new StatusMessage()
                         {
-                            Message = "Invalid history count, expected integer",
-                            State = MessageState.Error,
-                        })
-                        {
-                            Duration = 10000,
-                        }.Show();
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        new ToastStatusMessage(new StatusMessage()
-                        {
-                            Message = ex.ToString(),
+                            Message = $"Invalid history count '{opts}', expected integer",
                             State = MessageState.Error,
                         })
                         {
@@ -406,12 +372,12 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     }
                 }
             ) },
-            { "debug", (null, () => $"Toggle printing of the complete exception (current: {_client.Config.Debug})", null, (sender, args) =>
+            { "debug", (null, () => $"Toggle printing of the complete exception (current: {_client.Config.Debug})", null, (sender, args, opts) =>
             {
                 _client.Config.Debug = !_client.Config.Debug;
                 RefreshConfigs();
             }) },
-            { "reset", (null, () => "Reset all settings", null, (sender, args) =>
+            { "reset", (null, () => "Reset all settings", null, (sender, args, opts) =>
             {
                 _client.Config = new Config();
                 RefreshConfigs();
@@ -438,8 +404,46 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     .OrderBy(c => Levenshtein(c.Key, commandText))
                     .Select(c =>
                     {
-                        var command = new SendMessageCommand();
-                        command.SendMessage += c.Value.Item4.Invoke;
+                        var command = new SendMessageCommand() { Debug = _client.Config.Debug };
+                        command.SendMessage += (sender, args) =>
+                        {
+                            var opts = "";
+
+                            if (!SearchText.StartsWith($"/{c.Key}", StringComparison.InvariantCulture))
+                            {
+                                new ToastStatusMessage(new StatusMessage()
+                                {
+                                    Message = $"Command '{SearchText}' not found",
+                                    State = MessageState.Error,
+                                })
+                                {
+                                    Duration = 10000,
+                                }.Show();
+                                return;
+                            }
+
+                            if (c.Value.Item1 != null)
+                            {
+                                if (SearchText.StartsWith($"/{c.Key} ", StringComparison.InvariantCulture) && !string.IsNullOrEmpty(SearchText[$"/{c.Key} ".Length..]))
+                                {
+                                    opts = SearchText[$"/{c.Key} ".Length..].Trim();
+                                }
+                                else
+                                {
+                                    new ToastStatusMessage(new StatusMessage()
+                                    {
+                                        Message = $"Expected argument '{c.Value.Item1}' for command '/{c.Key}'",
+                                        State = MessageState.Error,
+                                    })
+                                    {
+                                        Duration = 10000,
+                                    }.Show();
+                                    return;
+                                }
+                            }
+
+                            c.Value.Item4.Invoke(sender, args, opts);
+                        };
 
                         var item = new ListItem(command)
                         {
@@ -487,7 +491,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     }
                     else
                     {
-                        var command = new SendMessageCommand();
+                        var command = new SendMessageCommand() { Debug = _client.Config.Debug };
                         if (!IsLoading)
                         {
                             command.SendMessage += async (sender, args) =>
@@ -510,9 +514,9 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                                 {
                                     new ToastStatusMessage(new StatusMessage()
                                     {
-                                        Message =
-                                            $"Error calling API over HTTP, is the server running and accepting connections at '{_client.Config.Url}' " +
-                                            $"with model '{_client.Config.Model}'?",
+                                        Message = 
+                                            $"Error calling API over HTTP, is there a '{_client.Config.Service}' server running and accepting connections " +
+                                            $"at '{_client.Config.Url}' with model '{_client.Config.Model}'?",
                                         State = MessageState.Error,
                                     })
                                     {
@@ -523,7 +527,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                                 {
                                     new ToastStatusMessage(new StatusMessage()
                                     {
-                                        Message = ex.ToString(),
+                                        Message = _client.Config.Debug ? ex.ToString() : "An error occurred when running command",
                                         State = MessageState.Error,
                                     })
                                     {
@@ -687,6 +691,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 internal sealed partial class SendMessageCommand : InvokableCommand
 {
     public event TypedEventHandler<SendMessageCommand, ICommandResult?>? SendMessage;
+    public required bool Debug { get; set; }
 
     public override ICommandResult Invoke()
     {
@@ -700,7 +705,7 @@ internal sealed partial class SendMessageCommand : InvokableCommand
         {
             new ToastStatusMessage(new StatusMessage()
             {
-                Message = ex.ToString(),
+                Message = Debug ? ex.ToString() : "An error occurred when running the command",
                 State = MessageState.Error,
             })
             {
@@ -726,7 +731,7 @@ internal sealed partial class DetailedResponsePage : ContentPage
     public override IContent[] GetContent()
     {
         return [
-            new MarkdownContent($"{User}\n\n---\n\n{Assistant}"),
+            new MarkdownContent($"**{User}**\n\n---\n\n{Assistant}"),
         ];
     }
 }
