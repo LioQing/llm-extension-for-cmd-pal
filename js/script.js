@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const systemThemeButton = document.getElementById('theme-system');
     const body = document.body;
     const buttons = [lightThemeButton, darkThemeButton, systemThemeButton].filter(btn => btn !== null); // Filter out nulls if buttons don't exist on a page
+    const storeBadge = document.querySelector('ms-store-badge');
 
     function applyTheme(theme) {
         body.classList.remove('light-theme', 'dark-theme');
@@ -13,14 +14,23 @@ document.addEventListener('DOMContentLoaded', () => {
             body.classList.add('light-theme');
             if(lightThemeButton) lightThemeButton.classList.add('active');
             localStorage.setItem('llm-extension-for-cmd-pal-theme', 'light');
+            if (storeBadge) storeBadge.setAttribute('theme', 'light');
         } else if (theme === 'dark') {
             body.classList.add('dark-theme');
             if(darkThemeButton) darkThemeButton.classList.add('active');
             localStorage.setItem('llm-extension-for-cmd-pal-theme', 'dark');
+            if (storeBadge) storeBadge.setAttribute('theme', 'dark');
         } else { // System theme
             if(systemThemeButton) systemThemeButton.classList.add('active');
             localStorage.setItem('llm-extension-for-cmd-pal-theme', 'system');
             // CSS media queries will handle appearance for system theme
+            if (storeBadge) {
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    storeBadge.setAttribute('theme', 'dark');
+                } else {
+                    storeBadge.setAttribute('theme', 'light');
+                }
+            }
         }
     }
 
@@ -39,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
         if (localStorage.getItem('llm-extension-for-cmd-pal-theme') === 'system') {
-            applyTheme('system');
+            applyTheme('system'); // This will re-evaluate and set the badge theme
         }
     });
 
