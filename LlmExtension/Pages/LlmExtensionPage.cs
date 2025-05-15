@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation
+﻿// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -20,6 +20,7 @@ using OpenAIMessage = OpenAI.Chat.ChatMessage;
 using OpenAIChatRole = OpenAI.Chat.ChatMessageRole;
 using AzureOpenAIBaseApiClient = Azure.AI.OpenAI.AzureOpenAIClient;
 using System.ClientModel;
+using Windows.Media.Protection.PlayReady;
 
 namespace LlmExtension;
 
@@ -236,10 +237,44 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     }
 
     private static readonly string ConfigPath = "%USERPROFILE%\\.config\\LlmExtensionForCmdPal\\config.json";
+    private static readonly string HelpMessage =
+        "## What is this extension\n" +
+        "\n" +
+        "This extension allows you to chat with LLM models, such as Ollama, OpenAI, and AzureOpenAI, either hosted by yourself or by a third party.\n" +
+        "\n" +
+        "## How to use this extension\n" +
+        "\n" +
+        "There are two ways to interact with this extension:\n" +
+        "\n" +
+        "1. **Chat**: Type your message in the search box and press enter to send it to the LLM model. The model will respond with a message.\n" +
+        "\n" +
+        "2. **Commands**: Type `/` in the search box to see a list of available commands. You can use these commands to configure the extension, such as setting the model, API key, and other options.\n" +
+        "\n" +
+        "## Setting up the extension\n" +
+        "\n" +
+        "1. **Setup your LLM model**: You need to have a LLM model running on your local machine or a server. You can use Ollama, OpenAI, or AzureOpenAI models. Visit their respective websites for more information on how to set them up.\n" +
+        "\n" +
+        "2. **Configure the extension**: Use commands to setup the connection with the LLM model.\n" +
+        "\n" +
+        "    - `/service <service>`: Set the API service to call (Ollama, OpenAI, or AzureOpenAI).\n" +
+        "        - For other services with OpenAPI compatible APIs such as Docker Model Runner, use the `OpenAI` service.\n" +
+        "    - `/url <url>`: Set the server URL.\n" +
+        "        - For Ollama, usually `http://localhost:11434/`.\n" +
+        "        - For OpenAI, usually `https://api.openai.com/v1/`.\n" +
+        "        - For AzureOpenAI, usually `https://your-id.openai.azure.com/`.\n" +
+        "        - For Docker Model Runner, usually `https://localhost:your-port/engines/llama.cpp/v1/`.\n" +
+        "    - `/model <model-name>`: Set the model to use.\n" +
+        "        - For AzureOpenAI, this is the deployment name.\n" +
+        "\n" +
+        "3. **Send a message**: Type your message in the search box and press enter to send it to the LLM model. The model will respond with a message.\n" +
+        "\n" +
+        "## YouTube Playlist\n" +
+        "\n" +
+        "There is also a YouTube playlist introducing the usage of the extension! Run the command `/videos` to open the link.";
 
     private readonly Client _client;
     private readonly IList<ChatMessage> _messages;
-    private readonly IDictionary<string, (string?, Func<string>, Func<(string, string)>?, Action<SendMessageCommand, object?, string>)> _commands;
+    private readonly IDictionary<string, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?)> _commands;
 
     public LlmExtensionPage()
     {
@@ -255,11 +290,12 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         };
         _client.ReinitializeApiClient();
         _messages = [new() { User = "", Assistant = "" }];
-        _commands = new Dictionary<string, (string?, Func<string>, Func<(string, string)>?, Action<SendMessageCommand, object?, string>)>()
+        _commands = new Dictionary<string, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?)>()
         {
             { "service", (
                 "<one-of-[ Ollama | OpenAI | AzureOpenAI ]>",
                 () => $"Set the API service to call (currently: {_client.Config.Service})",
+                null,
                 null,
                 (sender, args, opts) => {
                     Service? service = opts.ToLowerInvariant() switch
@@ -290,33 +326,33 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     RefreshConfigs();
                 })
             },
-            { "clear", (null, () => $"Clear message history ({_messages.Count} message" + (_messages.Count > 1 ? "s" : "") + ")", null, (sender, args, opts) => {
+            { "clear", (null, () => $"Clear message history ({_messages.Count} message" + (_messages.Count > 1 ? "s" : "") + ")", null, null, (sender, args, opts) => {
                 _messages.Clear();
                 _messages.Add(new() { User = "", Assistant = "" });
                 SearchText = "";
                 RaiseItemsChanged(_messages.Count);
             }) },
-            { "url", ("<url>", () => $"Set server URL (current: {_client.Config.Url})", null, (sender, args, opts) =>
+            { "url", ("<url>", () => $"Set server URL (current: {_client.Config.Url})", null, null, (sender, args, opts) =>
             {
                 _client.Config.Url = opts;
                 RefreshConfigs();
             }) },
-            { "model", ("<model-name>", () => $"Set the model to use (current: {_client.Config.Model})", null, (sender, args, opts) =>
+            { "model", ("<model-name>", () => $"Set the model to use (current: {_client.Config.Model})", null, null, (sender, args, opts) =>
             {
                 _client.Config.Model = opts;
                 RefreshConfigs();
             }) },
-            { "keepalive", ("<duration>", () => $"Set the keep-alive duration (Ollama only, current: {_client.Config.KeepAlive})", null, (sender, args, opts) =>
+            { "keepalive", ("<duration>", () => $"Set the keep-alive duration (Ollama only, current: {_client.Config.KeepAlive})", null, null, (sender, args, opts) =>
             {
                 _client.Config.KeepAlive = opts;
                 RefreshConfigs();
             }) },
-            { "apikey", ("<api-key>", () => $"Set the API key (OpenAI or AzureOpenAI only)", null, (sender, args, opts) =>
+            { "apikey", ("<api-key>", () => $"Set the API key (OpenAI or AzureOpenAI only)", null, null, (sender, args, opts) =>
             {
                 _client.Config.ApiKey = opts;
                 RefreshConfigs();
             }) },
-            { "detail", (null, () => $"Toggle full detailed response on the side (current: {_client.Config.Details})", null, (sender, args, opts) =>
+            { "detail", (null, () => $"Toggle full detailed response on the side (current: {_client.Config.Details})", null, null, (sender, args, opts) =>
             {
                 _client.Config.Details = !_client.Config.Details;
                 RefreshConfigs();
@@ -325,6 +361,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 "<system-prompt>",
                 () => $"Set the system prompt",
                 () => ("Current System Prompt", _client.Config.System),
+                null,
                 (sender, args, opts) =>
                 {
                     _client.Config.System = opts;
@@ -334,6 +371,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
             { "history", (
                 "<history-count>",
                 () => $"Set the message history count (current: {_client.Config.History})",
+                null,
                 null,
                 (sender, args, opts) =>
                 {
@@ -372,12 +410,26 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     }
                 }
             ) },
-            { "debug", (null, () => $"Toggle printing of the complete exception (current: {_client.Config.Debug})", null, (sender, args, opts) =>
+            { "help", (
+                null,
+                () => $"Help message on usage of this extension",
+                () => ("Help message", HelpMessage),
+                null,
+                null
+            ) },
+            { "videos", (
+                null,
+                () => $"Open the YouTube playlist of introducing the usage of this extension",
+                null,
+                "https://www.youtube.com/playlist?list=PLtpfYcxJV4LHu0gpKagHWjYR1Lghulnt8",
+                null
+            ) },
+            { "debug", (null, () => $"Toggle printing of the complete exception (current: {_client.Config.Debug})", null, null, (sender, args, opts) =>
             {
                 _client.Config.Debug = !_client.Config.Debug;
                 RefreshConfigs();
             }) },
-            { "reset", (null, () => "Reset all settings", null, (sender, args, opts) =>
+            { "reset", (null, () => "Reset all settings", null, null, (sender, args, opts) =>
             {
                 _client.Config = new Config();
                 RefreshConfigs();
@@ -404,46 +456,13 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     .OrderBy(c => Levenshtein(c.Key, commandText))
                     .Select(c =>
                     {
-                        var command = new SendMessageCommand() { Debug = _client.Config.Debug };
-                        command.SendMessage += (sender, args) =>
-                        {
-                            var opts = "";
-
-                            if (!SearchText.StartsWith($"/{c.Key}", StringComparison.InvariantCulture))
-                            {
-                                new ToastStatusMessage(new StatusMessage()
-                                {
-                                    Message = $"Command '{SearchText}' not found",
-                                    State = MessageState.Error,
-                                })
-                                {
-                                    Duration = 10000,
-                                }.Show();
-                                return;
-                            }
-
-                            if (c.Value.Item1 != null)
-                            {
-                                if (SearchText.StartsWith($"/{c.Key} ", StringComparison.InvariantCulture) && !string.IsNullOrEmpty(SearchText[$"/{c.Key} ".Length..]))
-                                {
-                                    opts = SearchText[$"/{c.Key} ".Length..].Trim();
-                                }
-                                else
-                                {
-                                    new ToastStatusMessage(new StatusMessage()
-                                    {
-                                        Message = $"Expected argument '{c.Value.Item1}' for command '/{c.Key}'",
-                                        State = MessageState.Error,
-                                    })
-                                    {
-                                        Duration = 10000,
-                                    }.Show();
-                                    return;
-                                }
-                            }
-
-                            c.Value.Item4.Invoke(sender, args, opts);
-                        };
+                        ICommand command = c.Value.Item5 != null
+                            ? SendMessageCommand.CreateCommand(c.Key, c.Value, SearchText, _client.Config.Debug)
+                            : c.Value.Item3 != null
+                                ? new MarkdownPage(c.Value.Item3.Invoke().Item1, c.Value.Item3.Invoke().Item2)
+                                : c.Value.Item4 != null
+                                    ? new OpenUrlCommand(c.Value.Item4)
+                                    : new NoOpCommand();
 
                         var item = new ListItem(command)
                         {
@@ -693,6 +712,52 @@ internal sealed partial class SendMessageCommand : InvokableCommand
     public event TypedEventHandler<SendMessageCommand, ICommandResult?>? SendMessage;
     public required bool Debug { get; set; }
 
+    public static SendMessageCommand CreateCommand(string key, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?) value, string searchText, bool debug)
+    {
+        var command = new SendMessageCommand() { Debug = debug };
+        command.SendMessage += (sender, args) =>
+        {
+            var opts = "";
+
+            if (!searchText.StartsWith($"/{key}", StringComparison.InvariantCulture))
+            {
+                new ToastStatusMessage(new StatusMessage()
+                {
+                    Message = $"Command '{searchText}' not found",
+                    State = MessageState.Error,
+                })
+                {
+                    Duration = 10000,
+                }.Show();
+                return;
+            }
+
+            if (value.Item1 != null)
+            {
+                if (searchText.StartsWith($"/{key} ", StringComparison.InvariantCulture) && !string.IsNullOrEmpty(searchText[$"/{key} ".Length..]))
+                {
+                    opts = searchText[$"/{key} ".Length..].Trim();
+                }
+                else
+                {
+                    new ToastStatusMessage(new StatusMessage()
+                    {
+                        Message = $"Expected argument '{value.Item1}' for command '/{key}'",
+                        State = MessageState.Error,
+                    })
+                    {
+                        Duration = 10000,
+                    }.Show();
+                    return;
+                }
+            }
+
+            value.Item5?.Invoke(sender, args, opts);
+        };
+
+        return command;
+    }
+
     public override ICommandResult Invoke()
     {
         CommandResult? result = null;
@@ -732,6 +797,24 @@ internal sealed partial class DetailedResponsePage : ContentPage
     {
         return [
             new MarkdownContent($"**{User}**\n\n---\n\n{Assistant}"),
+        ];
+    }
+}
+
+internal sealed partial class MarkdownPage : ContentPage
+{
+    public string Content { get; set; }
+
+    public MarkdownPage(string title, string content)
+    {
+        Title = title;
+        Content = content;
+    }
+
+    public override IContent[] GetContent()
+    {
+        return [
+            new MarkdownContent(Content),
         ];
     }
 }
