@@ -8,24 +8,23 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
-using System.Threading;
 using Microsoft.CommandPalette.Extensions;
 using Microsoft.CommandPalette.Extensions.Toolkit;
 using Windows.Foundation;
-using OllamaBaseApiClient = OllamaSharp.OllamaApiClient;
-using OllamaMessage = OllamaSharp.Models.Chat.Message;
-using OllamaChatRole = OllamaSharp.Models.Chat.ChatRole;
-using OpenAIBaseApiClient = OpenAI.OpenAIClient;
-using OpenAIMessage = OpenAI.Chat.ChatMessage;
-using OpenAIChatRole = OpenAI.Chat.ChatMessageRole;
-using AzureOpenAIBaseApiClient = Azure.AI.OpenAI.AzureOpenAIClient;
 using System.ClientModel;
-using Windows.Media.Protection.PlayReady;
+using Microsoft.SemanticKernel.ChatCompletion;
+using OllamaSharp;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
+using System.Threading.Tasks;
 
 namespace LlmExtension;
 
 internal sealed partial class LlmExtensionPage : DynamicListPage
 {
+    /// <summary>
+    ///     Supported services.
+    /// </summary>
     enum Service
     {
         Ollama,
@@ -33,50 +32,18 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         AzureOpenAI,
     }
 
+    /// <summary>
+    ///     User and assistant chat conversation message.
+    /// </summary>
     class ChatMessage
     {
         public required string User { get; set; }
         public required string Assistant { get; set; }
-
-        public List<OllamaMessage> OllamaMessages()
-        {
-            var messages = new List<OllamaMessage>();
-
-            if (!string.IsNullOrEmpty(Assistant))
-            {
-                messages.Add(new(OllamaChatRole.Assistant, Assistant));
-            }
-
-            if (!string.IsNullOrEmpty(User))
-            {
-                messages.Add(new(OllamaChatRole.User, User));
-            }
-
-            return messages;
-        }
-
-        public static OllamaMessage OllamaSystemMessage(string prompt) => new(OllamaChatRole.System, prompt);
-
-        public List<OpenAIMessage> OpenAIMessages()
-        {
-            var messages = new List<OpenAIMessage>();
-
-            if (!string.IsNullOrEmpty(Assistant))
-            {
-                messages.Add(new OpenAI.Chat.AssistantChatMessage(Assistant));
-            }
-
-            if (!string.IsNullOrEmpty(User))
-            {
-                messages.Add(new OpenAI.Chat.UserChatMessage(User));
-            }
-
-            return messages;
-        }
-
-        public static OpenAIMessage OpenAISystemMessage(string prompt) => new OpenAI.Chat.SystemChatMessage(prompt);
     }
 
+    /// <summary>
+    ///     User configurations.
+    /// </summary>
     class Config
     {
         public Service Service { get; set; } = Service.Ollama;
@@ -94,146 +61,83 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         public bool Debug { get; set; }
     }
 
-    class ChatException : Exception
-    {
-        public required string DisplayMessage { get; set; }
-    }
-
-    class ServiceApiKeyException : Exception
-    { }
-
-    interface IApiClient
-    {
-        abstract public static IApiClient Create(Config config);
-
-        public IAsyncEnumerable<string> Chat(IEnumerable<ChatMessage> messages, Config config);
-    }
-
-    partial class OllamaApiClient : OllamaBaseApiClient, IApiClient
-    {
-        public OllamaApiClient(Config config) : base(new HttpClient()
-        {
-            Timeout = TimeSpan.FromHours(1),
-            BaseAddress = new Uri(config.Url)
-        })
-        { }
-
-        public static IApiClient Create(Config config)
-        {
-            return new OllamaApiClient(config);
-        }
-
-        async public IAsyncEnumerable<string> Chat(IEnumerable<ChatMessage> messages, Config config)
-        {
-            var ollamaMessages = messages
-                .SelectMany(m => m.OllamaMessages())
-                .Take(config.History)
-                .Reverse()
-                .ToList();
-
-            ollamaMessages.Insert(0, ChatMessage.OllamaSystemMessage(config.System));
-
-            await foreach (var response in ChatAsync(
-                new() { Messages = ollamaMessages, Model = config.Model, KeepAlive = config.KeepAlive },
-                cancellationToken: CancellationToken.None))
-            {
-                yield return response?.Message.Content ?? "";
-            }
-        }
-    }
-
-    partial class OpenAIApiClient : OpenAIBaseApiClient, IApiClient
-    {
-        public OpenAIApiClient(Config config): base(
-            new ApiKeyCredential(config.ApiKey ?? " "),
-            new OpenAI.OpenAIClientOptions() { Endpoint = string.IsNullOrEmpty(config.Url) ? null : new Uri(config.Url) })
-        { }
-
-        public static IApiClient Create(Config config)
-        {
-            return new OpenAIApiClient(config);
-        }
-
-        async public IAsyncEnumerable<string> Chat(IEnumerable<ChatMessage> messages, Config config)
-        {
-            var openAIMessages = messages
-                .SelectMany(m => m.OpenAIMessages())
-                .Take(config.History)
-                .Reverse()
-                .ToList();
-
-            openAIMessages.Insert(0, ChatMessage.OpenAISystemMessage(config.System));
-
-            await foreach (var response in GetChatClient(config.Model).CompleteChatStreamingAsync(
-                openAIMessages, options: new OpenAI.Chat.ChatCompletionOptions(), cancellationToken: CancellationToken.None))
-            {
-                foreach (var part in response.ContentUpdate)
-                {
-                    if (part.Kind != OpenAI.Chat.ChatMessageContentPartKind.Text)
-                        continue;
-
-                    yield return part.Text;
-                }
-            }
-        }
-    }
-
-    partial class AzureOpenAIApiClient : AzureOpenAIBaseApiClient, IApiClient
-    {
-        public AzureOpenAIApiClient(Config config) : base(
-            new Uri(config.Url),
-            new ApiKeyCredential(config.ApiKey ?? " "))
-        { }
-
-        public static IApiClient Create(Config config)
-        {
-            return new AzureOpenAIApiClient(config);
-        }
-
-        async public IAsyncEnumerable<string> Chat(IEnumerable<ChatMessage> messages, Config config)
-        {
-            var openAIMessages = messages
-                .SelectMany(m => m.OpenAIMessages())
-                .Take(config.History)
-                .Reverse()
-                .ToList();
-
-            openAIMessages.Insert(0, ChatMessage.OpenAISystemMessage(config.System));
-
-            await foreach (var response in GetChatClient(config.Model).CompleteChatStreamingAsync(
-                openAIMessages, options: new OpenAI.Chat.ChatCompletionOptions(), cancellationToken: CancellationToken.None))
-            {
-                foreach (var part in response.ContentUpdate)
-                {
-                    if (part.Kind != OpenAI.Chat.ChatMessageContentPartKind.Text)
-                        continue;
-
-                    yield return part.Text;
-                }
-            }
-        }
-    }
-
+    /// <summary>
+    ///     Client containing the configuration and the service.
+    /// </summary>
     class Client
     {
         public required Config Config;
-        public IApiClient ApiClient { get; private set; } = CreateApiClient(new Config());
+        public IChatCompletionService Service { get; private set; } = CreateService(new Config());
 
-        public void ReinitializeApiClient()
+        public void ReinitializeService()
         {
-            ApiClient = CreateApiClient(Config);
+            Service = CreateService(Config);
         }
 
-        public static IApiClient CreateApiClient(Config config)
+        async public IAsyncEnumerable<string> Chat(IEnumerable<ChatMessage> messages)
+        {
+            ChatHistory history = [];
+            history.AddSystemMessage(Config.System);
+            foreach (var message in messages)
+            {
+                if (!string.IsNullOrEmpty(message.User))
+                {
+                    history.AddUserMessage(message.User);
+
+                    if (history.Count > Config.History + 1)
+                    {
+                        break;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(message.Assistant))
+                {
+                    history.AddAssistantMessage(message.Assistant);
+
+                    if (history.Count > Config.History + 1)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            await foreach (var content in Service.GetStreamingChatMessageContentsAsync(history))
+            {
+                if (string.IsNullOrEmpty(content.Content))
+                {
+                    continue;
+                }
+
+                yield return content.Content;
+            }
+        }
+
+        public static IChatCompletionService CreateService(Config config)
         {
             return config.Service switch
             {
-                Service.Ollama => OllamaApiClient.Create(config),
-                Service.OpenAI => OpenAIApiClient.Create(config),
-                Service.AzureOpenAI => AzureOpenAIApiClient.Create(config),
+                LlmExtensionPage.Service.Ollama => CreateOllamaService(config),
+                LlmExtensionPage.Service.OpenAI => CreateOpenAIService(config),
+                LlmExtensionPage.Service.AzureOpenAI => CreateAzureOpenAIService(config),
                 _ => throw new ArgumentException("Invalid service name")
             };
         }
+
+#pragma warning disable SKEXP0001
+        private static IChatCompletionService CreateOllamaService(Config config) => new OllamaApiClient(
+            uriString: config.Url,
+            defaultModel: config.Model
+        ).AsChatCompletionService();
+
+        private static OpenAIChatCompletionService CreateOpenAIService(Config config) => new(
+            config.Model,
+            new OpenAI.OpenAIClient(
+                new ApiKeyCredential(config.ApiKey ?? " "),
+                new OpenAI.OpenAIClientOptions() { Endpoint = string.IsNullOrEmpty(config.Url) ? null : new Uri(config.Url) }));
+
+        private static AzureOpenAIChatCompletionService CreateAzureOpenAIService(Config config) => new(
+            config.Model,
+            new Azure.AI.OpenAI.AzureOpenAIClient(new Uri(config.Url), new ApiKeyCredential(config.ApiKey ?? " ")));
     }
 
     private static readonly string ConfigPath = "%USERPROFILE%\\.config\\LlmExtensionForCmdPal\\config.json";
@@ -288,7 +192,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         {
             Config = ReadConfig()
         };
-        _client.ReinitializeApiClient();
+        _client.ReinitializeService();
         _messages = [new() { User = "", Assistant = "" }];
         _commands = new Dictionary<string, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?)>()
         {
@@ -308,14 +212,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
                     if (service == null)
                     {
-                        new ToastStatusMessage(new StatusMessage()
-                        {
-                            Message = $"Invalid service '{opts}', expected one of 'Ollama', 'OpenAI', 'AzureOpenAI'",
-                            State = MessageState.Error,
-                        })
-                        {
-                            Duration = 10000,
-                        }.Show();
+                        ErrorToast($"Invalid service '{opts}', expected one of 'Ollama', 'OpenAI', 'AzureOpenAI'");
                         return;
                     }
                     else
@@ -381,14 +278,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
                         if (count <= 0)
                         {
-                            new ToastStatusMessage(new StatusMessage()
-                            {
-                                Message = $"Invalid history count {count}, expected positive integer",
-                                State = MessageState.Error,
-                            })
-                            {
-                                Duration = 10000,
-                            }.Show();
+                            ErrorToast($"Invalid history count {count}, expected positive integer");
                             return;
                         }
 
@@ -398,14 +288,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     }
                     catch (FormatException) when (!_client.Config.Debug)
                     {
-                        new ToastStatusMessage(new StatusMessage()
-                        {
-                            Message = $"Invalid history count '{opts}', expected integer",
-                            State = MessageState.Error,
-                        })
-                        {
-                            Duration = 10000,
-                        }.Show();
+                        ErrorToast($"Invalid history count '{opts}', expected integer");
                         return;
                     }
                 }
@@ -519,7 +402,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                                 {
                                     IsLoading = true;
 
-                                    await foreach (var response in _client.ApiClient.Chat(_messages, _client.Config))
+                                    await foreach (var response in _client.Chat(_messages))
                                     {
                                         m.Assistant += response;
                                         RaiseItemsChanged(_messages.Count);
@@ -531,27 +414,14 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                                 }
                                 catch (Exception ex) when (!_client.Config.Debug && (ex is HttpRequestException || ex is ClientResultException))
                                 {
-                                    new ToastStatusMessage(new StatusMessage()
-                                    {
-                                        Message = 
-                                            $"Error calling API over HTTP, is there a '{_client.Config.Service}' server running and accepting connections " +
-                                            $"at '{_client.Config.Url}' with model '{_client.Config.Model}'?",
-                                        State = MessageState.Error,
-                                    })
-                                    {
-                                        Duration = 10000,
-                                    }.Show();
+                                    ErrorToast(
+                                        $"Error calling API over HTTP, is there a '{_client.Config.Service}' server running and accepting connections " +
+                                        $"at '{_client.Config.Url}' with model '{_client.Config.Model}'? Or perhaps the API key is incorrect?"
+                                    );
                                 }
                                 catch (Exception ex)
                                 {
-                                    new ToastStatusMessage(new StatusMessage()
-                                    {
-                                        Message = _client.Config.Debug ? ex.ToString() : "An error occurred when running command",
-                                        State = MessageState.Error,
-                                    })
-                                    {
-                                        Duration = 10000,
-                                    }.Show();
+                                    ErrorToast(_client.Config.Debug ? ex.ToString() : "An error occurred when attempting to chat with LLM");
                                 }
                                 finally
                                 {
@@ -586,15 +456,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         }
         catch (Exception ex)
         {
-            new ToastStatusMessage(new StatusMessage()
-            {
-                Message = ex.ToString(),
-                State = MessageState.Error,
-            })
-            {
-                Duration = 10000,
-            }.Show();
-
+            ErrorToast(_client.Config.Debug ? ex.ToString() : "An unexpected error occurred");
             IsLoading = false;
 
             return [];
@@ -646,7 +508,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
     private void RefreshConfigs()
     {
-        _client.ReinitializeApiClient();
+        _client.ReinitializeService();
         SaveConfig();
         SearchText = "";
         RaiseItemsChanged(_messages.Count);
@@ -705,6 +567,17 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         return d[d.GetUpperBound(0), d.GetUpperBound(1)];
 
     }
+    internal static void ErrorToast(string message)
+    {
+        new ToastStatusMessage(new StatusMessage()
+        {
+            Message = message,
+            State = MessageState.Error,
+        })
+        {
+            Duration = 10000,
+        }.Show();
+    }
 }
 
 internal sealed partial class SendMessageCommand : InvokableCommand
@@ -721,14 +594,7 @@ internal sealed partial class SendMessageCommand : InvokableCommand
 
             if (!searchText.StartsWith($"/{key}", StringComparison.InvariantCulture))
             {
-                new ToastStatusMessage(new StatusMessage()
-                {
-                    Message = $"Command '{searchText}' not found",
-                    State = MessageState.Error,
-                })
-                {
-                    Duration = 10000,
-                }.Show();
+                LlmExtensionPage.ErrorToast($"Command '{searchText}' not found");
                 return;
             }
 
@@ -740,14 +606,7 @@ internal sealed partial class SendMessageCommand : InvokableCommand
                 }
                 else
                 {
-                    new ToastStatusMessage(new StatusMessage()
-                    {
-                        Message = $"Expected argument '{value.Item1}' for command '/{key}'",
-                        State = MessageState.Error,
-                    })
-                    {
-                        Duration = 10000,
-                    }.Show();
+                    LlmExtensionPage.ErrorToast($"Expected argument '{value.Item1}' for command '/{key}'");
                     return;
                 }
             }
@@ -768,14 +627,7 @@ internal sealed partial class SendMessageCommand : InvokableCommand
         }
         catch (Exception ex)
         {
-            new ToastStatusMessage(new StatusMessage()
-            {
-                Message = Debug ? ex.ToString() : "An error occurred when running the command",
-                State = MessageState.Error,
-            })
-            {
-                Duration = 10000,
-            }.Show();
+            LlmExtensionPage.ErrorToast(Debug ? ex.ToString() : "An error occurred when running the command");
         }
         return CommandResult.KeepOpen();
     }
