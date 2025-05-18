@@ -16,7 +16,9 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using OllamaSharp;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
-using System.Threading.Tasks;
+using Microsoft.SemanticKernel.Connectors.Google;
+using Microsoft.SemanticKernel.Connectors.HuggingFace;
+using Microsoft.SemanticKernel.Connectors.MistralAI;
 
 namespace LlmExtension;
 
@@ -30,6 +32,8 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         Ollama,
         OpenAI,
         AzureOpenAI,
+        Google,
+        Mistral,
     }
 
     /// <summary>
@@ -47,10 +51,9 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     class Config
     {
         public Service Service { get; set; } = Service.Ollama;
-        public string Url { get; set; } = "http://localhost:11434";
+        public string Url { get; set; } = "";
         public string? Model { get; set; }
         public bool Details { get; set; } = true;
-        public string KeepAlive { get; set; } = "5m";
         public string? ApiKey { get; set; }
         public string System { get; set; } =
             "You are an AI assistant, you should provide help to the user with their query. " +
@@ -67,15 +70,25 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     class Client
     {
         public required Config Config;
-        public IChatCompletionService Service { get; private set; } = CreateService(new Config());
+        private IChatCompletionService? Service { get; set; }
+        public IEnumerable<string> MissingConfigs { get; private set; } = new List<string>();
 
         public void ReinitializeService()
         {
+            MissingConfigs = MissingConfigsForService();
+
+            if (MissingConfigs.Any())
+            {
+                return;
+            }
+
             Service = CreateService(Config);
         }
 
         async public IAsyncEnumerable<string> Chat(IEnumerable<ChatMessage> messages)
         {
+            if (Service == null) yield break;
+
             ChatHistory history = [];
             history.AddSystemMessage(Config.System);
             foreach (var message in messages)
@@ -112,6 +125,32 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
             }
         }
 
+        public IEnumerable<string> MissingConfigsForService()
+        {
+            var missingFields = new List<string>();
+
+            if (string.IsNullOrEmpty(Config.Model)) missingFields.Add("model");
+
+            if (Config.Service == LlmExtensionPage.Service.Ollama)
+            {
+                if (string.IsNullOrEmpty(Config.Url)) missingFields.Add("url");
+            }
+            else if (Config.Service == LlmExtensionPage.Service.AzureOpenAI)
+            {
+                if (string.IsNullOrEmpty(Config.ApiKey)) missingFields.Add("apikey");
+            }
+            else if (Config.Service == LlmExtensionPage.Service.Google)
+            {
+                if (string.IsNullOrEmpty(Config.ApiKey)) missingFields.Add("apikey");
+            }
+            else if (Config.Service == LlmExtensionPage.Service.Mistral)
+            {
+                if (string.IsNullOrEmpty(Config.ApiKey)) missingFields.Add("apikey");
+            }    
+
+            return missingFields;
+        }
+
         public static IChatCompletionService CreateService(Config config)
         {
             return config.Service switch
@@ -119,32 +158,44 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 LlmExtensionPage.Service.Ollama => CreateOllamaService(config),
                 LlmExtensionPage.Service.OpenAI => CreateOpenAIService(config),
                 LlmExtensionPage.Service.AzureOpenAI => CreateAzureOpenAIService(config),
+                LlmExtensionPage.Service.Google => CreateGoogleService(config),
+                LlmExtensionPage.Service.Mistral => CreateMistralService(config),
                 _ => throw new ArgumentException("Invalid service name")
             };
         }
 
 #pragma warning disable SKEXP0001
         private static IChatCompletionService CreateOllamaService(Config config) => new OllamaApiClient(
-            uriString: config.Url,
-            defaultModel: config.Model
+                uriString: config.Url,
+                defaultModel: config.Model ?? ""
         ).AsChatCompletionService();
 
         private static OpenAIChatCompletionService CreateOpenAIService(Config config) => new(
-            config.Model,
+            config.Model ?? " ",
             new OpenAI.OpenAIClient(
                 new ApiKeyCredential(config.ApiKey ?? " "),
                 new OpenAI.OpenAIClientOptions() { Endpoint = string.IsNullOrEmpty(config.Url) ? null : new Uri(config.Url) }));
 
         private static AzureOpenAIChatCompletionService CreateAzureOpenAIService(Config config) => new(
-            config.Model,
+            config.Model ?? " ",
             new Azure.AI.OpenAI.AzureOpenAIClient(new Uri(config.Url), new ApiKeyCredential(config.ApiKey ?? " ")));
+
+#pragma warning disable SKEXP0070
+        private static GoogleAIGeminiChatCompletionService CreateGoogleService(Config config) => new(
+            config.Model ?? " ",
+            config.ApiKey ?? " ");
+
+        private static MistralAIChatCompletionService CreateMistralService(Config config) => new(
+            config.Model ?? " ",
+            config.ApiKey ?? " ",
+            string.IsNullOrEmpty(config.Url) ? null : new Uri(config.Url));
     }
 
     private static readonly string ConfigPath = "%USERPROFILE%\\.config\\LlmExtensionForCmdPal\\config.json";
     private static readonly string HelpMessage =
         "## What is this extension\n" +
         "\n" +
-        "This extension allows you to chat with LLM models, such as Ollama, OpenAI, and AzureOpenAI, either hosted by yourself or by a third party.\n" +
+        "This extension allows you to chat with LLM models, including Ollama, OpenAI, Azure OpenAI, Google Gemini, or Mistral, either hosted by yourself or by a third party.\n" +
         "\n" +
         "## How to use this extension\n" +
         "\n" +
@@ -156,19 +207,21 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         "\n" +
         "## Setting up the extension\n" +
         "\n" +
-        "1. **Setup your LLM model**: You need to have a LLM model running on your local machine or a server. You can use Ollama, OpenAI, or AzureOpenAI models. Visit their respective websites for more information on how to set them up.\n" +
+        "1. **Setup your LLM model**: You need to have a LLM model running on your local machine or a server. Visit the supported service providers respective websites for more information on how to set them up.\n" +
         "\n" +
         "2. **Configure the extension**: Use commands to setup the connection with the LLM model.\n" +
         "\n" +
-        "    - `/service <service>`: Set the API service to call (Ollama, OpenAI, or AzureOpenAI).\n" +
+        "    - `/service <service>`: Set the API service to call (Ollama, OpenAI, AzureOpenAI, Google, or Mistral).\n" +
         "        - For other services with OpenAPI compatible APIs such as Docker Model Runner, use the `OpenAI` service.\n" +
         "    - `/url <url>`: Set the server URL.\n" +
+        "        - For services that do not need a URL, you may enter `/url ` without any arguments.\n" +
         "        - For Ollama, usually `http://localhost:11434/`.\n" +
-        "        - For OpenAI, usually `https://api.openai.com/v1/`.\n" +
         "        - For AzureOpenAI, usually `https://your-id.openai.azure.com/`.\n" +
-        "        - For Docker Model Runner, usually `https://localhost:your-port/engines/llama.cpp/v1/`.\n" +
+        "        - For Docker Model Runner, usually `https://localhost:your-port/engines/llama.cpp/v1/` with OpenAI service.\n" +
         "    - `/model <model-name>`: Set the model to use.\n" +
         "        - For AzureOpenAI, this is the deployment name.\n" +
+        "    - `/apikey <api-key>`: Set the API key.\n" +
+        "        - For Ollama, this is not applicable.\n" +
         "\n" +
         "3. **Send a message**: Type your message in the search box and press enter to send it to the LLM model. The model will respond with a message.\n" +
         "\n" +
@@ -197,7 +250,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         _commands = new Dictionary<string, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?)>()
         {
             { "service", (
-                "<one-of-[ Ollama | OpenAI | AzureOpenAI ]>",
+                "<one-of-[ Ollama | OpenAI | AzureOpenAI | Google | Mistral ]>",
                 () => $"Set the API service to call (currently: {_client.Config.Service})",
                 null,
                 null,
@@ -207,12 +260,14 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                         "ollama" => Service.Ollama,
                         "openai" => Service.OpenAI,
                         "azureopenai" => Service.AzureOpenAI,
+                        "google" => Service.Google,
+                        "mistral" => Service.Mistral,
                         _ => null,
                     };
 
                     if (service == null)
                     {
-                        ErrorToast($"Invalid service '{opts}', expected one of 'Ollama', 'OpenAI', 'AzureOpenAI'");
+                        ErrorToast($"Invalid service '{opts}', expected one of 'Ollama', 'OpenAI', 'AzureOpenAI', 'Google', 'Mistral'");
                         return;
                     }
                     else
@@ -239,12 +294,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 _client.Config.Model = opts;
                 RefreshConfigs();
             }) },
-            { "keepalive", ("<duration>", () => $"Set the keep-alive duration (Ollama only, current: {_client.Config.KeepAlive})", null, null, (sender, args, opts) =>
-            {
-                _client.Config.KeepAlive = opts;
-                RefreshConfigs();
-            }) },
-            { "apikey", ("<api-key>", () => $"Set the API key (OpenAI or AzureOpenAI only)", null, null, (sender, args, opts) =>
+            { "apikey", ("<api-key>", () => $"Set the API key (Ollama not applicable)", null, null, (sender, args, opts) =>
             {
                 _client.Config.ApiKey = opts;
                 RefreshConfigs();
@@ -373,9 +423,12 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     .ToArray();
             }
 
-            if (_client.Config.Model == null)
+            if (_client.MissingConfigs.Any())
             {
-                return [new ListItem(new NoOpCommand()) { Icon = new IconInfo("\u26A0"), Title = "No model is set", Subtitle = "please set a model with '/model <model-name>'" }];
+                return [new ListItem(new NoOpCommand()) {
+                    Icon = new IconInfo("\u26A0"),
+                    Title = $"Configuration incomplete for {_client.Config.Service}",
+                    Subtitle = $"The missing configurations are: {string.Join(", ", _client.MissingConfigs)}" }];
             }
 
             if (!IsLoading)
@@ -600,9 +653,12 @@ internal sealed partial class SendMessageCommand : InvokableCommand
 
             if (value.Item1 != null)
             {
-                if (searchText.StartsWith($"/{key} ", StringComparison.InvariantCulture) && !string.IsNullOrEmpty(searchText[$"/{key} ".Length..]))
+                if (searchText.StartsWith($"/{key} ", StringComparison.InvariantCulture))
                 {
-                    opts = searchText[$"/{key} ".Length..].Trim();
+                    if (searchText.Length > $"/{key} ".Length)
+                    {
+                        opts = searchText[$"/{key} ".Length..].Trim();
+                    }
                 }
                 else
                 {
