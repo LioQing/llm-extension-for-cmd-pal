@@ -357,6 +357,13 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 "https://www.youtube.com/playlist?list=PLtpfYcxJV4LHu0gpKagHWjYR1Lghulnt8",
                 null
             ) },
+            { "config", (
+                null,
+                () => $"Open the folder containing the configuration file",
+                null,
+                Environment.ExpandEnvironmentVariables("%USERPROFILE%\\.config\\LlmExtensionForCmdPal"),
+                null
+            ) },
             { "debug", (null, () => $"Toggle printing of the complete exception (current: {_client.Config.Debug})", null, null, (sender, args, opts) =>
             {
                 _client.Config.Debug = !_client.Config.Debug;
