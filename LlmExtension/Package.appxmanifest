@@ -11,7 +11,7 @@
   <Identity
     Name="LioQing.LLMExtensionforCommandPalette"
     Publisher="CN=087E4036-09C3-4A81-B69A-ADD29D778B50"
-    Version="0.0.1.0" />
+    Version="0.0.2.0" />
   <!-- When you're ready to publish your extension, you'll need to change the
        Publisher= to match your own identity -->
 
