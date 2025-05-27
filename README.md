@@ -12,7 +12,7 @@
 </p>
 
 <p align=center>
-  <a href="https://apps.microsoft.com/detail/9NPK6KSDLC81?hl=en-us&gl=HK&ocid=pdpshare">
+  <a href="https://apps.microsoft.com/detail/9NPK6KSDLC81">
   	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
   </a>
 </p>
