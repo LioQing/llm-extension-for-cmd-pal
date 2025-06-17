@@ -17,6 +17,10 @@
   </a>
 </p>
 
+> [!NOTE]
+>
+> The Microsoft store page has been down due to crashes caused by a bug still in investigation, but you may still install the extension directly from Command Palette or from the [Release page](https://github.com/LioQing/llm-extension-for-cmd-pal/releases).
+
 ## Demo Video
 
 https://github.com/user-attachments/assets/d8b707a9-b086-470f-8d01-7508091ebd9d
