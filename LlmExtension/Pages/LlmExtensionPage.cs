@@ -17,7 +17,6 @@ using OllamaSharp;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 using Microsoft.SemanticKernel.Connectors.Google;
-using Microsoft.SemanticKernel.Connectors.HuggingFace;
 using Microsoft.SemanticKernel.Connectors.MistralAI;
 
 namespace LlmExtension;
@@ -233,6 +232,9 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     private readonly IList<ChatMessage> _messages;
     private readonly IDictionary<string, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?)> _commands;
 
+    private (string, ListItem)[] _commandsMemo;
+    private ListItem[] _messagesMemo;
+
     public LlmExtensionPage()
     {
         Icon = IconHelpers.FromRelativePath("Assets\\SmallLlmExtensionLogo.png");
@@ -368,6 +370,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
             {
                 _client.Config.Debug = !_client.Config.Debug;
                 RefreshConfigs();
+                UpdateCommandsMemo();
             }) },
             { "reset", (null, () => "Reset all settings", null, null, (sender, args, opts) =>
             {
@@ -375,9 +378,23 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 RefreshConfigs();
             }) },
         };
+
+        UpdateCommandsMemo();
+        UpdateMessagesMemo();
     }
 
-    public override void UpdateSearchText(string oldSearch, string newSearch) => RaiseItemsChanged(_messages.Count);
+    public override void UpdateSearchText(string oldSearch, string newSearch) {
+        if (string.IsNullOrEmpty(oldSearch) || string.IsNullOrEmpty(newSearch) || oldSearch.StartsWith('/') || newSearch.StartsWith('/'))
+        {
+            RaiseItemsChanged(_messages.Count);
+
+            if (!IsLoading)
+            {
+                _messages[0].User = newSearch;
+            }
+            UpdateMessagesMemo();
+        }
+    }
 
     public override IListItem[] GetItems()
     {
@@ -392,41 +409,9 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     commandText = commandText[..commandText.IndexOf(' ')];
                 }
 
-                return _commands
-                    .OrderByDescending(c => c.Key.Zip(commandText).TakeWhile((pair) => pair.First == pair.Second).Count())
-                    .Select(c =>
-                    {
-                        ICommand command = c.Value.Item5 != null
-                            ? SendMessageCommand.CreateCommand(c.Key, c.Value, SearchText, _client.Config.Debug)
-                            : c.Value.Item3 != null
-                                ? new MarkdownPage(c.Value.Item3.Invoke().Item1, c.Value.Item3.Invoke().Item2)
-                                : c.Value.Item4 != null
-                                    ? new OpenUrlCommand(c.Value.Item4)
-                                    : new NoOpCommand();
-
-                        var item = new ListItem(command)
-                        {
-                            Title = $"/{c.Key}",
-                            Subtitle = c.Value.Item2.Invoke()
-                        };
-
-                        if (c.Value.Item1 != null)
-                        {
-                            item.Title += $" {c.Value.Item1}";
-                        }
-
-                        if (c.Value.Item3 != null)
-                        {
-                            var details = c.Value.Item3.Invoke();
-                            item.Details = new Details()
-                            {
-                                Title = details.Item1,
-                                Body = details.Item2,
-                            };
-                        }
-
-                        return item;
-                    })
+                return _commandsMemo
+                    .OrderByDescending(c => c.Item1.Zip(commandText).TakeWhile((pair) => pair.First == pair.Second).Count())
+                    .Select(c => c.Item2)
                     .ToArray();
             }
 
@@ -438,81 +423,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     Subtitle = $"The missing configurations are: {string.Join(", ", _client.MissingConfigs)}" }];
             }
 
-            if (!IsLoading)
-            {
-                _messages[0].User = SearchText;
-            }
-
-            return _messages.SelectMany<ChatMessage, ListItem>(m =>
-            {
-                if (string.IsNullOrEmpty(m.Assistant))
-                {
-                    if (string.IsNullOrEmpty(m.User))
-                    {
-                        return [];
-                    }
-                    else
-                    {
-                        var command = new SendMessageCommand() { Debug = _client.Config.Debug };
-                        if (!IsLoading)
-                        {
-                            command.SendMessage += async (sender, args) =>
-                            {
-                                try
-                                {
-                                    IsLoading = true;
-
-                                    await foreach (var response in _client.Chat(_messages))
-                                    {
-                                        m.Assistant += response;
-                                        RaiseItemsChanged(_messages.Count);
-                                    }
-
-                                    SearchText = "";
-                                    _messages.Insert(0, new() { User = "", Assistant = "" });
-                                    RaiseItemsChanged(_messages.Count);
-                                }
-                                catch (Exception ex) when (!_client.Config.Debug && (ex is HttpRequestException || ex is ClientResultException))
-                                {
-                                    ErrorToast(
-                                        $"Error calling API over HTTP, is there a '{_client.Config.Service}' server running and accepting connections " +
-                                        $"at '{_client.Config.Url}' with model '{_client.Config.Model}'? Or perhaps the API key is incorrect?"
-                                    );
-                                }
-                                catch (Exception ex)
-                                {
-                                    ErrorToast(_client.Config.Debug ? ex.ToString() : "An error occurred when attempting to chat with LLM");
-                                }
-                                finally
-                                {
-                                    IsLoading = false;
-                                }
-                            };
-                        }
-
-                        return [new ListItem(command) { Title = m.User, Subtitle = "Press enter to send" }];
-                    }
-                }
-                else
-                {
-                    var item = new ListItem(new DetailedResponsePage(m.User, m.Assistant))
-                    {
-                        Title = m.Assistant,
-                        Subtitle = m.User,
-                    };
-
-                    if (_client.Config.Details)
-                    {
-                        item.Details = new Details()
-                        {
-                            Title = m.User,
-                            Body = m.Assistant,
-                        };
-                    }
-
-                    return [item];
-                }
-            }).ToArray();
+            return _messagesMemo;
         }
         catch (Exception ex)
         {
@@ -572,6 +483,121 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         SaveConfig();
         SearchText = "";
         RaiseItemsChanged(_messages.Count);
+        UpdateMessagesMemo();
+    }
+
+    private void UpdateCommandsMemo()
+    {
+        _commandsMemo = _commands.Select(c =>
+         {
+             ICommand command = c.Value.Item5 != null
+                 ? SendMessageCommand.CreateCommand(c.Key, c.Value, SearchText, _client.Config.Debug)
+                 : c.Value.Item3 != null
+                     ? new MarkdownPage(c.Value.Item3.Invoke().Item1, c.Value.Item3.Invoke().Item2)
+                     : c.Value.Item4 != null
+                         ? new OpenUrlCommand(c.Value.Item4)
+                         : new NoOpCommand();
+
+             var item = new ListItem(command)
+             {
+                 Title = $"/{c.Key}",
+                 Subtitle = c.Value.Item2.Invoke()
+             };
+
+             if (c.Value.Item1 != null)
+             {
+                 item.Title += $" {c.Value.Item1}";
+             }
+
+             if (c.Value.Item3 != null)
+             {
+                 var details = c.Value.Item3.Invoke();
+                 item.Details = new Details()
+                 {
+                     Title = details.Item1,
+                     Body = details.Item2,
+                 };
+             }
+
+             return (c.Key, item);
+         })
+        .ToArray();
+    }
+
+    private void UpdateMessagesMemo()
+    {
+        _messagesMemo = _messages.SelectMany<ChatMessage, ListItem>(m =>
+        {
+            if (string.IsNullOrEmpty(m.Assistant))
+            {
+                if (string.IsNullOrEmpty(m.User))
+                {
+                    return [];
+                }
+                else
+                {
+                    var command = new SendMessageCommand() { Debug = _client.Config.Debug };
+                    if (!IsLoading)
+                    {
+                        command.SendMessage += async (sender, args) =>
+                        {
+                            try
+                            {
+                                _messages[0].User = SearchText;
+
+                                IsLoading = true;
+
+                                await foreach (var response in _client.Chat(_messages))
+                                {
+                                    m.Assistant += response;
+                                    RaiseItemsChanged(_messages.Count);
+                                }
+
+                                SearchText = "";
+                                _messages.Insert(0, new() { User = "", Assistant = "" });
+                                RaiseItemsChanged(_messages.Count);
+                            }
+                            catch (Exception ex) when (!_client.Config.Debug && (ex is HttpRequestException || ex is ClientResultException))
+                            {
+                                ErrorToast(
+                                    $"Error calling API over HTTP, is there a '{_client.Config.Service}' server running and accepting connections " +
+                                    $"at '{_client.Config.Url}' with model '{_client.Config.Model}'? Or perhaps the API key is incorrect?"
+                                );
+                            }
+                            catch (Exception ex)
+                            {
+                                ErrorToast(_client.Config.Debug ? ex.ToString() : "An error occurred when attempting to chat with LLM");
+                            }
+                            finally
+                            {
+                                IsLoading = false;
+                            }
+                        };
+                    }
+
+                    return [new ListItem(command) { Title = "Press enter to send" }];
+                }
+            }
+            else
+            {
+                var item = new ListItem(new DetailedResponsePage(m.User, m.Assistant))
+                {
+                    Title = m.Assistant,
+                    Subtitle = m.User,
+                };
+
+                if (_client.Config.Details)
+                {
+                    item.Details = new Details()
+                    {
+                        Title = m.User,
+                        Body = m.Assistant,
+                    };
+                }
+
+                return [item];
+            }
+        }).ToArray();
     }
 
     internal static void ErrorToast(string message)
