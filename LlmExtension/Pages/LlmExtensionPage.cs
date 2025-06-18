@@ -370,7 +370,6 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
             {
                 _client.Config.Debug = !_client.Config.Debug;
                 RefreshConfigs();
-                UpdateCommandsMemo();
             }) },
             { "reset", (null, () => "Reset all settings", null, null, (sender, args, opts) =>
             {
@@ -481,8 +480,9 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         _client.ReinitializeService();
         SaveConfig();
         SearchText = "";
-        RaiseItemsChanged(_messages.Count);
+        UpdateCommandsMemo();
         UpdateMessagesMemo();
+        RaiseItemsChanged(_messages.Count);
     }
 
     private void UpdateCommandsMemo()
@@ -490,7 +490,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         _commandsMemo = _commands.Select(c =>
          {
              ICommand command = c.Value.Item5 != null
-                 ? SendMessageCommand.CreateCommand(c.Key, c.Value, SearchText, _client.Config.Debug)
+                 ? SendMessageCommand.CreateCommand(c.Key, c.Value, () => SearchText, _client.Config.Debug)
                  : c.Value.Item3 != null
                      ? new MarkdownPage(c.Value.Item3.Invoke().Item1, c.Value.Item3.Invoke().Item2)
                      : c.Value.Item4 != null
@@ -617,11 +617,16 @@ internal sealed partial class SendMessageCommand : InvokableCommand
     public event TypedEventHandler<SendMessageCommand, ICommandResult?>? SendMessage;
     public required bool Debug { get; set; }
 
-    public static SendMessageCommand CreateCommand(string key, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?) value, string searchText, bool debug)
+    public static SendMessageCommand CreateCommand(
+        string key,
+        (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?) value,
+        Func<string> searchTextFunc,
+        bool debug)
     {
         var command = new SendMessageCommand() { Debug = debug };
         command.SendMessage += (sender, args) =>
         {
+            var searchText = searchTextFunc();
             var opts = "";
 
             if (!searchText.StartsWith($"/{key}", StringComparison.InvariantCulture))
