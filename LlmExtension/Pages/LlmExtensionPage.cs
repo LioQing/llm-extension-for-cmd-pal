@@ -386,13 +386,12 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     public override void UpdateSearchText(string oldSearch, string newSearch) {
         if (string.IsNullOrEmpty(oldSearch) || string.IsNullOrEmpty(newSearch) || oldSearch.StartsWith('/') || newSearch.StartsWith('/'))
         {
-            RaiseItemsChanged(_messages.Count);
-
             if (!IsLoading)
             {
                 _messages[0].User = newSearch;
             }
             UpdateMessagesMemo();
+            RaiseItemsChanged(_messages.Count);
         }
     }
 
