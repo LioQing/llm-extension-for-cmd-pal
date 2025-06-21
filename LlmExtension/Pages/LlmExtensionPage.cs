@@ -18,6 +18,9 @@ using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 using Microsoft.SemanticKernel.Connectors.Google;
 using Microsoft.SemanticKernel.Connectors.MistralAI;
+using Microsoft.SemanticKernel.Connectors.Ollama;
+using Microsoft.SemanticKernel;
+using System.Collections;
 
 namespace LlmExtension;
 
@@ -61,6 +64,9 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
         public int History { get; set; } = 6;
         public bool Debug { get; set; }
+        public int MaxTokens { get; set; } = 4096;
+        public float Temperature { get; set; } = 0.8f;
+        public float TopP { get; set; } = 1.0f;
     }
 
     /// <summary>
@@ -88,6 +94,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         {
             if (Service == null) yield break;
 
+            // Build history
             ChatHistory history = [];
             history.AddSystemMessage(Config.System);
             foreach (var message in messages.Reverse())
@@ -113,7 +120,42 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 }
             }
 
-            await foreach (var content in Service.GetStreamingChatMessageContentsAsync(history))
+            // Build execution settings
+#pragma warning disable SKEXP0070
+            PromptExecutionSettings settings = Config.Service switch
+            {
+                LlmExtensionPage.Service.Ollama => new OllamaPromptExecutionSettings()
+                {
+                    Temperature = Config.Temperature,
+                    TopP = Config.TopP,
+                },
+                LlmExtensionPage.Service.OpenAI => new OpenAIPromptExecutionSettings()
+                {
+                    MaxTokens = Config.MaxTokens,
+                    Temperature = Config.Temperature,
+                    TopP = Config.TopP,
+                },
+                LlmExtensionPage.Service.AzureOpenAI => new AzureOpenAIPromptExecutionSettings()
+                {
+                    MaxTokens = Config.MaxTokens,
+                    Temperature = Config.Temperature,
+                    TopP = Config.TopP,
+                },
+                LlmExtensionPage.Service.Google => new GeminiPromptExecutionSettings()
+                {
+                    MaxTokens = Config.MaxTokens,
+                    Temperature = Config.Temperature,
+                    TopP = Config.TopP,
+                },
+                LlmExtensionPage.Service.Mistral => new MistralAIPromptExecutionSettings()
+                {
+                    MaxTokens = Config.MaxTokens,
+                    Temperature = Config.Temperature,
+                    TopP = Config.TopP,
+                },
+            };
+
+            await foreach (var content in Service.GetStreamingChatMessageContentsAsync(history, settings))
             {
                 if (string.IsNullOrEmpty(content.Content))
                 {
@@ -284,7 +326,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 _messages.Clear();
                 _messages.Add(new() { User = "", Assistant = "" });
                 SearchText = "";
-                RaiseItemsChanged(_messages.Count);
+                RaiseItemsChanged();
             }) },
             { "url", ("<url>", () => $"Set server URL (current: {_client.Config.Url})", null, null, (sender, args, opts) =>
             {
@@ -345,6 +387,90 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     }
                 }
             ) },
+            { "maxtokens", (
+                "<token-count>",
+                () => $"Set the maximum token count (Ollama not applicable, current: {_client.Config.MaxTokens})",
+                null,
+                null,
+                (sender, args, opts) =>
+                {
+                    try
+                    {
+                        var count = int.Parse(opts);
+
+                        if (count <= 0)
+                        {
+                            ErrorToast($"Invalid token count {count}, expected positive integer");
+                            return;
+                        }
+
+                        _client.Config.MaxTokens = count;
+
+                        RefreshConfigs();
+                    }
+                    catch (FormatException) when (!_client.Config.Debug)
+                    {
+                        ErrorToast($"Invalid token count '{opts}', expected integer");
+                        return;
+                    }
+                }
+            ) },
+            { "temperature", (
+                "<temperature-in-range-0.0-to-1.0>",
+                () => $"Set the model temperature, indicating creativeness (current: {_client.Config.Temperature})",
+                null,
+                null,
+                (sender, args, opts) =>
+                {
+                    try
+                    {
+                        var value = float.Parse(opts);
+
+                        if (value < 0.0 || value > 1.0)
+                        {
+                            ErrorToast($"Invalid temperature {value}, expected floating point number between 0.0 and 1.0");
+                            return;
+                        }
+
+                        _client.Config.Temperature = value;
+
+                        RefreshConfigs();
+                    }
+                    catch (FormatException) when (!_client.Config.Debug)
+                    {
+                        ErrorToast($"Invalid temperature '{opts}', expected floating point number");
+                        return;
+                    }
+                }
+            ) },
+            { "topp", (
+                "<top-p-in-range-0.0-to-1.0>",
+                () => $"Set the model top P, indicating randomness (current: {_client.Config.TopP})",
+                null,
+                null,
+                (sender, args, opts) =>
+                {
+                    try
+                    {
+                        var value = float.Parse(opts);
+
+                        if (value < 0.0 || value > 1.0)
+                        {
+                            ErrorToast($"Invalid top P {value}, expected floating point number between 0.0 and 1.0");
+                            return;
+                        }
+
+                        _client.Config.TopP = value;
+
+                        RefreshConfigs();
+                    }
+                    catch (FormatException) when (!_client.Config.Debug)
+                    {
+                        ErrorToast($"Invalid top P '{opts}', expected floating point number");
+                        return;
+                    }
+                }
+            ) },
             { "help", (
                 null,
                 () => $"Help message on usage of this extension",
@@ -383,14 +509,17 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     }
 
     public override void UpdateSearchText(string oldSearch, string newSearch) {
-        if (string.IsNullOrEmpty(oldSearch) || string.IsNullOrEmpty(newSearch) || oldSearch.StartsWith('/') || newSearch.StartsWith('/'))
+        if (string.IsNullOrEmpty(oldSearch) != string.IsNullOrEmpty(newSearch) || oldSearch.StartsWith('/') != newSearch.StartsWith('/'))
         {
             if (!IsLoading)
             {
                 _messages[0].User = newSearch;
             }
             UpdateMessagesMemo();
-            RaiseItemsChanged(_messages.Count);
+            RaiseItemsChanged();
+        } else if (newSearch.StartsWith('/'))
+        {
+            RaiseItemsChanged();
         }
     }
 
@@ -482,44 +611,44 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         SearchText = "";
         UpdateCommandsMemo();
         UpdateMessagesMemo();
-        RaiseItemsChanged(_messages.Count);
+        RaiseItemsChanged();
     }
 
     private void UpdateCommandsMemo()
     {
         _commandsMemo = _commands.Select(c =>
-         {
-             ICommand command = c.Value.Item5 != null
-                 ? SendMessageCommand.CreateCommand(c.Key, c.Value, () => SearchText, _client.Config.Debug)
-                 : c.Value.Item3 != null
-                     ? new MarkdownPage(c.Value.Item3.Invoke().Item1, c.Value.Item3.Invoke().Item2)
-                     : c.Value.Item4 != null
-                         ? new OpenUrlCommand(c.Value.Item4)
-                         : new NoOpCommand();
+        {
+            ICommand command = c.Value.Item5 != null
+                ? SendMessageCommand.CreateCommand(c.Key, c.Value, () => SearchText, _client.Config.Debug)
+                : c.Value.Item3 != null
+                    ? new MarkdownPage(c.Value.Item3.Invoke().Item1, c.Value.Item3.Invoke().Item2)
+                    : c.Value.Item4 != null
+                        ? new OpenUrlCommand(c.Value.Item4)
+                        : new NoOpCommand();
 
-             var item = new ListItem(command)
-             {
-                 Title = $"/{c.Key}",
-                 Subtitle = c.Value.Item2.Invoke()
-             };
+            var item = new ListItem(command)
+            {
+                Title = $"/{c.Key}",
+                Subtitle = c.Value.Item2.Invoke()
+            };
 
-             if (c.Value.Item1 != null)
-             {
-                 item.Title += $" {c.Value.Item1}";
-             }
+            if (c.Value.Item1 != null)
+            {
+                item.Title += $" {c.Value.Item1}";
+            }
 
-             if (c.Value.Item3 != null)
-             {
-                 var details = c.Value.Item3.Invoke();
-                 item.Details = new Details()
-                 {
-                     Title = details.Item1,
-                     Body = details.Item2,
-                 };
-             }
+            if (c.Value.Item3 != null)
+            {
+                var details = c.Value.Item3.Invoke();
+                item.Details = new Details()
+                {
+                    Title = details.Item1,
+                    Body = details.Item2,
+                };
+            }
 
-             return (c.Key, item);
-         })
+            return (c.Key, item);
+        })
         .ToArray();
     }
 
@@ -549,12 +678,12 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                                 await foreach (var response in _client.Chat(_messages))
                                 {
                                     m.Assistant += response;
-                                    RaiseItemsChanged(_messages.Count);
+                                    RaiseItemsChanged();
                                 }
 
                                 SearchText = "";
                                 _messages.Insert(0, new() { User = "", Assistant = "" });
-                                RaiseItemsChanged(_messages.Count);
+                                RaiseItemsChanged();
                             }
                             catch (Exception ex) when (!_client.Config.Debug && (ex is HttpRequestException || ex is ClientResultException))
                             {
@@ -562,6 +691,21 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                                     $"Error calling API over HTTP, is there a '{_client.Config.Service}' server running and accepting connections " +
                                     $"at '{_client.Config.Url}' with model '{_client.Config.Model}'? Or perhaps the API key is incorrect?"
                                 );
+                            }
+                            catch (HttpOperationException ex) when (_client.Config.Debug)
+                            {
+                                var dataString = "";
+                                foreach (DictionaryEntry item in ex.Data)
+                                {
+                                    dataString += $"{item.Key}: {item.Value}\n";
+                                }
+
+                                if (!string.IsNullOrEmpty(dataString))
+                                {
+                                    dataString = "\n" + dataString;
+                                }
+
+                                ErrorToast($"An HTTP error occurred: {ex.Message} with inner exception {ex.InnerException}{dataString}");
                             }
                             catch (Exception ex)
                             {
