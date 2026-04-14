@@ -97,26 +97,17 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
             // Build history
             ChatHistory history = [];
             history.AddSystemMessage(Config.System);
-            foreach (var message in messages.Reverse())
+            var relevantMessages = messages.Take(Config.History).Reverse();
+            foreach (var message in relevantMessages)
             {
                 if (!string.IsNullOrEmpty(message.User))
                 {
                     history.AddUserMessage(message.User);
-
-                    if (history.Count >= Config.History + 1)
-                    {
-                        break;
-                    }
                 }
 
                 if (!string.IsNullOrEmpty(message.Assistant))
                 {
                     history.AddAssistantMessage(message.Assistant);
-
-                    if (history.Count >= Config.History + 1)
-                    {
-                        break;
-                    }
                 }
             }
 
@@ -654,7 +645,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
     private void UpdateMessagesMemo()
     {
-        _messagesMemo = _messages.SelectMany<ChatMessage, ListItem>(m =>
+        _messagesMemo = _messages.SelectMany<ChatMessage, ListItem>((m, index) =>
         {
             if (string.IsNullOrEmpty(m.Assistant))
             {
@@ -662,27 +653,30 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 {
                     return [];
                 }
-                else
+                else if (index == 0)
                 {
                     var command = new SendMessageCommand() { Debug = _client.Config.Debug };
                     if (!IsLoading)
                     {
                         command.SendMessage += async (sender, args) =>
                         {
+                            if (IsLoading) return;
                             try
                             {
                                 _messages[0].User = SearchText;
 
                                 IsLoading = true;
+                                UpdateMessagesMemo();
+                                RaiseItemsChanged();
 
                                 await foreach (var response in _client.Chat(_messages))
                                 {
                                     m.Assistant += response;
-                                    RaiseItemsChanged();
                                 }
 
                                 SearchText = "";
                                 _messages.Insert(0, new() { User = "", Assistant = "" });
+                                UpdateMessagesMemo();
                                 RaiseItemsChanged();
                             }
                             catch (Exception ex) when (!_client.Config.Debug && (ex is HttpRequestException || ex is ClientResultException))
@@ -720,13 +714,22 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
                     return [new ListItem(command) { Title = "Press enter to send" }];
                 }
+                else 
+                {
+                    return [new ListItem(new DetailedResponsePage(m.User, "No response received.")) { 
+                        Title = m.User, 
+                        Subtitle = "No response received." 
+                    }];
+                }
             }
             else
             {
                 var item = new ListItem(new DetailedResponsePage(m.User, m.Assistant))
                 {
-                    Title = m.Assistant,
-                    Subtitle = m.User,
+                    Title = m.User,
+                    Subtitle = IsLoading && index == 0 
+                        ? "Generating..." 
+                        : (m.Assistant.Length > 100 ? m.Assistant[..100].Replace("\n", " ") + "..." : m.Assistant.Replace("\n", " ")),
                 };
 
                 if (_client.Config.Details)
