@@ -223,6 +223,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
             string.IsNullOrEmpty(config.Url) ? null : new Uri(config.Url));
     }
 
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly string ConfigPath = "%USERPROFILE%\\.config\\LlmExtensionForCmdPal\\config.json";
     private static readonly string HelpMessage =
         "## What is this extension\n" +
@@ -263,7 +264,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
     private readonly Client _client;
     private readonly IList<ChatMessage> _messages;
-    private readonly IDictionary<string, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?)> _commands;
+    private readonly IDictionary<string, SlashCommand> _commands;
 
     private (string, ListItem)[] _commandsMemo;
     private ListItem[] _messagesMemo;
@@ -282,13 +283,11 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         };
         _client.ReinitializeService();
         _messages = [new() { User = "", Assistant = "" }];
-        _commands = new Dictionary<string, (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?)>()
+        _commands = new Dictionary<string, SlashCommand>()
         {
-            { "service", (
-                "<one-of-[ Ollama | OpenAI | AzureOpenAI | Google | Mistral ]>",
+            { "service", new(
                 () => $"Set the API service to call (currently: {_client.Config.Service})",
-                null,
-                null,
+                "<one-of-[ Ollama | OpenAI | AzureOpenAI | Google | Mistral ]>",
                 (sender, args, opts) => {
                     Service? service = opts.ToLowerInvariant() switch
                     {
@@ -311,50 +310,71 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     }
 
                     RefreshConfigs();
-                })
+                },
+                "Service configured")
             },
-            { "clear", (null, () => $"Clear message history ({_messages.Count} message" + (_messages.Count > 1 ? "s" : "") + ")", null, null, (sender, args, opts) => {
-                _messages.Clear();
-                _messages.Add(new() { User = "", Assistant = "" });
-                SearchText = "";
-                RaiseItemsChanged();
-            }) },
-            { "url", ("<url>", () => $"Set server URL (current: {_client.Config.Url})", null, null, (sender, args, opts) =>
-            {
-                _client.Config.Url = opts;
-                RefreshConfigs();
-            }) },
-            { "model", ("<model-name>", () => $"Set the model to use (current: {_client.Config.Model})", null, null, (sender, args, opts) =>
-            {
-                _client.Config.Model = opts;
-                RefreshConfigs();
-            }) },
-            { "apikey", ("<api-key>", () => $"Set the API key (Ollama not applicable)", null, null, (sender, args, opts) =>
-            {
-                _client.Config.ApiKey = opts;
-                RefreshConfigs();
-            }) },
-            { "detail", (null, () => $"Toggle full detailed response on the side (current: {_client.Config.Details})", null, null, (sender, args, opts) =>
-            {
-                _client.Config.Details = !_client.Config.Details;
-                RefreshConfigs();
-            }) },
-            { "system", (
-                "<system-prompt>",
+            { "clear", new(
+                () => $"Clear message history ({_messages.Count} message" + (_messages.Count > 1 ? "s" : "") + ")",
+                Action: (sender, args, opts) => {
+                    _messages.Clear();
+                    _messages.Add(new() { User = "", Assistant = "" });
+                    RaiseItemsChanged();
+                },
+                ActionToastText: "Message cleared")
+            },
+            { "url", new(
+                () => $"Set server URL (current: {_client.Config.Url})",
+                "<url>",
+                (sender, args, opts) =>
+                {
+                    _client.Config.Url = opts;
+                    RefreshConfigs();
+                },
+                "Server URL configured")
+            },
+            { "model", new(
+                () => $"Set the model to use (current: {_client.Config.Model})",
+                "<model-name>",
+                (sender, args, opts) =>
+                {
+                    _client.Config.Model = opts;
+                    RefreshConfigs();
+                },
+                "Model configured")
+            },
+            { "apikey", new(
+                () => $"Set the API key (Ollama not applicable)",
+                "<api-key>",
+                (sender, args, opts) =>
+                {
+                    _client.Config.ApiKey = opts;
+                    RefreshConfigs();
+                },
+                "API key configured")
+            },
+            { "detail", new(
+                () => $"Toggle full detailed response on the side (current: {_client.Config.Details})",
+                Action: (sender, args, opts) =>
+                {
+                    _client.Config.Details = !_client.Config.Details;
+                    RefreshConfigs();
+                },
+                ActionToastText: "Detailed response toggled")
+            },
+            { "system", new(
                 () => $"Set the system prompt",
-                () => ("Current System Prompt", _client.Config.System),
-                null,
+                "<system-prompt>",
                 (sender, args, opts) =>
                 {
                     _client.Config.System = opts;
                     RefreshConfigs();
-                }
+                },
+                "System prompt configured",
+                () => ("Current System Prompt", _client.Config.System)
             ) },
-            { "history", (
-                "<history-count>",
+            { "history", new(
                 () => $"Set the message history count (current: {_client.Config.History})",
-                null,
-                null,
+                "<history-count>",
                 (sender, args, opts) =>
                 {
                     try
@@ -376,13 +396,12 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                         ErrorToast($"Invalid history count '{opts}', expected integer");
                         return;
                     }
-                }
-            ) },
-            { "maxtokens", (
-                "<token-count>",
+                },
+                "Message history count configured")
+            },
+            { "maxtokens", new(
                 () => $"Set the maximum token count (Ollama not applicable, current: {_client.Config.MaxTokens})",
-                null,
-                null,
+                "<token-count>",
                 (sender, args, opts) =>
                 {
                     try
@@ -404,13 +423,12 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                         ErrorToast($"Invalid token count '{opts}', expected integer");
                         return;
                     }
-                }
-            ) },
-            { "temperature", (
-                "<temperature-in-range-0.0-to-1.0>",
+                },
+                "Maximum token count configured")
+            },
+            { "temperature", new(
                 () => $"Set the model temperature, indicating creativeness (current: {_client.Config.Temperature})",
-                null,
-                null,
+                "<temperature-in-range-0.0-to-1.0>",
                 (sender, args, opts) =>
                 {
                     try
@@ -432,13 +450,12 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                         ErrorToast($"Invalid temperature '{opts}', expected floating point number");
                         return;
                     }
-                }
-            ) },
-            { "topp", (
-                "<top-p-in-range-0.0-to-1.0>",
+                },
+                "Temperature configured")
+            },
+            { "topp", new(
                 () => $"Set the model top P, indicating randomness (current: {_client.Config.TopP})",
-                null,
-                null,
+                "<top-p-in-range-0.0-to-1.0>",
                 (sender, args, opts) =>
                 {
                     try
@@ -460,46 +477,47 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                         ErrorToast($"Invalid top P '{opts}', expected floating point number");
                         return;
                     }
-                }
-            ) },
-            { "help", (
-                null,
+                },
+                "Top P configured")
+            },
+            { "help", new(
                 () => $"Help message on usage of this extension",
-                () => ("Help message", HelpMessage),
-                null,
-                null
+                Details: () => ("Help message", HelpMessage)
             ) },
-            { "videos", (
-                null,
+            { "videos", new(
                 () => $"Open the YouTube playlist of introducing the usage of this extension",
-                null,
-                "https://www.youtube.com/playlist?list=PLtpfYcxJV4LHu0gpKagHWjYR1Lghulnt8",
-                null
+                Url: "https://www.youtube.com/playlist?list=PLtpfYcxJV4LHu0gpKagHWjYR1Lghulnt8"
             ) },
-            { "config", (
-                null,
+            { "config", new(
                 () => $"Open the folder containing the configuration file",
-                null,
-                Environment.ExpandEnvironmentVariables("%USERPROFILE%\\.config\\LlmExtensionForCmdPal"),
-                null
+                Url: Environment.ExpandEnvironmentVariables("%USERPROFILE%\\.config\\LlmExtensionForCmdPal")
             ) },
-            { "debug", (null, () => $"Toggle printing of the complete exception (current: {_client.Config.Debug})", null, null, (sender, args, opts) =>
-            {
-                _client.Config.Debug = !_client.Config.Debug;
-                RefreshConfigs();
-            }) },
-            { "reset", (null, () => "Reset all settings", null, null, (sender, args, opts) =>
-            {
-                _client.Config = new Config();
-                RefreshConfigs();
-            }) },
+            { "debug", new(
+                () => $"Toggle printing of the complete exception (current: {_client.Config.Debug})",
+                Action: (sender, args, opts) =>
+                {
+                    _client.Config.Debug = !_client.Config.Debug;
+                    RefreshConfigs();
+                },
+                ActionToastText: "Printing of complete exception configured toggled")
+            },
+            { "reset", new(
+                () => "Reset all settings",
+                Action: (sender, args, opts) =>
+                {
+                    _client.Config = new Config();
+                    RefreshConfigs();
+                },
+                ActionToastText: "All settings reset")
+            },
         };
 
         UpdateCommandsMemo();
         UpdateMessagesMemo();
     }
 
-    public override void UpdateSearchText(string oldSearch, string newSearch) {
+    public override void UpdateSearchText(string oldSearch, string newSearch)
+    {
         if (string.IsNullOrEmpty(oldSearch) != string.IsNullOrEmpty(newSearch) || oldSearch.StartsWith('/') != newSearch.StartsWith('/'))
         {
             if (!IsLoading)
@@ -508,7 +526,8 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
             }
             UpdateMessagesMemo();
             RaiseItemsChanged();
-        } else if (newSearch.StartsWith('/'))
+        }
+        else if (newSearch.StartsWith('/'))
         {
             RaiseItemsChanged();
         }
@@ -529,7 +548,13 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
                 return _commandsMemo
                     .OrderByDescending(c => c.Item1.Zip(commandText).TakeWhile((pair) => pair.First == pair.Second).Count())
-                    .Select(c => c.Item2)
+                    .Select(c => // Shallow copy so that item selection/highlight won't stick to the previous first item
+                    new ListItem(c.Item2)
+                    {
+                        Title = c.Item2.Title,
+                        Subtitle = c.Item2.Subtitle,
+                        Details = c.Item2.Details,
+                    })
                     .ToArray();
             }
 
@@ -560,7 +585,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         if (!Directory.Exists(dir))
             Directory.CreateDirectory(dir);
 
-        var json = JsonSerializer.Serialize(_client.Config, new JsonSerializerOptions() { WriteIndented = true });
+        var json = JsonSerializer.Serialize(_client.Config, JsonOptions);
         File.WriteAllText(path, json);
     }
 
@@ -575,7 +600,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         if (!File.Exists(path))
         {
             var defaultConfig = new Config();
-            var json = JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions() { WriteIndented = true });
+            var json = JsonSerializer.Serialize(defaultConfig, JsonOptions);
             File.WriteAllText(path, json);
             return defaultConfig;
         }
@@ -589,7 +614,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         catch (JsonException)
         {
             var defaultConfig = new Config();
-            var json = JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions() { WriteIndented = true });
+            var json = JsonSerializer.Serialize(defaultConfig, JsonOptions);
             File.WriteAllText(path, json);
             return defaultConfig;
         }
@@ -609,28 +634,37 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     {
         _commandsMemo = _commands.Select(c =>
         {
-            ICommand command = c.Value.Item5 != null
+            ICommand command = c.Value.Action != null
                 ? SendMessageCommand.CreateCommand(c.Key, c.Value, () => SearchText, _client.Config.Debug)
-                : c.Value.Item3 != null
-                    ? new MarkdownPage(c.Value.Item3.Invoke().Item1, c.Value.Item3.Invoke().Item2)
-                    : c.Value.Item4 != null
-                        ? new OpenUrlCommand(c.Value.Item4)
+                : c.Value.Details != null
+                    ? new MarkdownPage(c.Value.Details.Invoke().Item1, c.Value.Details.Invoke().Item2)
+                    : c.Value.Url != null
+                        ? new OpenUrlCommand(c.Value.Url)
                         : new NoOpCommand();
+
+            if (c.Value.Action != null)
+            {
+                ((SendMessageCommand)command).SendMessage += (_, _) =>
+                {
+                    SearchText = "";
+                    OnPropertyChanged(nameof(SearchText));
+                };
+            }
 
             var item = new ListItem(command)
             {
                 Title = $"/{c.Key}",
-                Subtitle = c.Value.Item2.Invoke()
+                Subtitle = c.Value.Description.Invoke()
             };
 
-            if (c.Value.Item1 != null)
+            if (c.Value.Param != null)
             {
-                item.Title += $" {c.Value.Item1}";
+                item.Title += $" {c.Value.Param}";
             }
 
-            if (c.Value.Item3 != null)
+            if (c.Value.Details != null)
             {
-                var details = c.Value.Item3.Invoke();
+                var details = c.Value.Details.Invoke();
                 item.Details = new Details()
                 {
                     Title = details.Item1,
@@ -664,14 +698,19 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                             try
                             {
                                 _messages[0].User = SearchText;
-
                                 IsLoading = true;
+
+                                SearchText = "";
+                                OnPropertyChanged(nameof(SearchText));
+
                                 UpdateMessagesMemo();
                                 RaiseItemsChanged();
 
                                 await foreach (var response in _client.Chat(_messages))
                                 {
                                     m.Assistant += response;
+                                    UpdateMessagesMemo();
+                                    RaiseItemsChanged();
                                 }
 
                                 SearchText = "";
@@ -714,11 +753,11 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
 
                     return [new ListItem(command) { Title = "Press enter to send" }];
                 }
-                else 
+                else
                 {
-                    return [new ListItem(new DetailedResponsePage(m.User, "No response received.")) { 
-                        Title = m.User, 
-                        Subtitle = "No response received." 
+                    return [new ListItem(new DetailedResponsePage(m.User, "No response received.")) {
+                        Title = m.User,
+                        Subtitle = "No response received."
                     }];
                 }
             }
@@ -727,9 +766,7 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 var item = new ListItem(new DetailedResponsePage(m.User, m.Assistant))
                 {
                     Title = m.User,
-                    Subtitle = IsLoading && index == 0 
-                        ? "Generating..." 
-                        : (m.Assistant.Length > 100 ? m.Assistant[..100].Replace("\n", " ") + "..." : m.Assistant.Replace("\n", " ")),
+                    Subtitle = m.Assistant,
                 };
 
                 if (_client.Config.Details)
@@ -759,18 +796,29 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
     }
 }
 
+internal record SlashCommand(
+    Func<string> Description,
+    string? Param = null,
+    Action<SendMessageCommand, object?, string>? Action = null,
+    string? ActionToastText = null,
+    Func<(string, string)>? Details = null,
+    string? Url = null
+);
+
 internal sealed partial class SendMessageCommand : InvokableCommand
 {
     public event TypedEventHandler<SendMessageCommand, ICommandResult?>? SendMessage;
     public required bool Debug { get; set; }
+    public string? ToastText { get; set; }
 
     public static SendMessageCommand CreateCommand(
         string key,
-        (string?, Func<string>, Func<(string, string)>?, string?, Action<SendMessageCommand, object?, string>?) value,
+        SlashCommand value,
         Func<string> searchTextFunc,
         bool debug)
     {
         var command = new SendMessageCommand() { Debug = debug };
+        command.ToastText = value.ActionToastText;
         command.SendMessage += (sender, args) =>
         {
             var searchText = searchTextFunc();
@@ -782,7 +830,7 @@ internal sealed partial class SendMessageCommand : InvokableCommand
                 return;
             }
 
-            if (value.Item1 != null)
+            if (value.Param != null)
             {
                 if (searchText.StartsWith($"/{key} ", StringComparison.InvariantCulture))
                 {
@@ -793,12 +841,12 @@ internal sealed partial class SendMessageCommand : InvokableCommand
                 }
                 else
                 {
-                    LlmExtensionPage.ErrorToast($"Expected argument '{value.Item1}' for command '/{key}'");
+                    LlmExtensionPage.ErrorToast($"Expected argument '{value.Param}' for command '/{key}'");
                     return;
                 }
             }
 
-            value.Item5?.Invoke(sender, args, opts);
+            value.Action?.Invoke(sender, args, opts);
         };
 
         return command;
@@ -816,7 +864,10 @@ internal sealed partial class SendMessageCommand : InvokableCommand
         {
             LlmExtensionPage.ErrorToast(Debug ? ex.ToString() : "An error occurred when running the command");
         }
-        return CommandResult.KeepOpen();
+
+        return ToastText != null
+            ? CommandResult.ShowToast(new ToastArgs { Message = ToastText, Result = CommandResult.KeepOpen() })
+            : CommandResult.KeepOpen();
     }
 }
 
