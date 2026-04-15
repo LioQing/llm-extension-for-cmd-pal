@@ -29,7 +29,11 @@ It currently supports the following APIs:
 
 You can find the extension by searching "Find Command Palette extensions from ..." in Command Palette and install the extension directly.
 
+<img width="826" height="508" alt="image" src="https://github.com/user-attachments/assets/51bec1fd-4c44-415e-98a8-e840a2e511ea" />
+
 ### WinGet
+
+You can download it via WinGet.
 
 ```
 winget install LioQing.LLMExtensionforCommandPalette
@@ -37,15 +41,15 @@ winget install LioQing.LLMExtensionforCommandPalette
 
 ### Microsoft Store
 
-<p align=center>
-  <a href="https://apps.microsoft.com/detail/9NPK6KSDLC81">
-  	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
-  </a>
-</p>
+You can download it from the Microsoft Store.
+
+<a href="https://apps.microsoft.com/detail/9NPK6KSDLC81">
+  <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
+</a>
 
 ### GitHub Releases
 
-[GitHub Releases](https://github.com/LioQing/llm-extension-for-cmd-pal/releases)
+You can download it from the [GitHub Releases](https://github.com/LioQing/llm-extension-for-cmd-pal/releases) page.
 
 ## Setup
 
