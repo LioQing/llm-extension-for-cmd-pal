@@ -11,16 +11,6 @@
   <img alt="GitHub Release" src="https://img.shields.io/github/v/release/lioqing/llm-extension-for-cmd-pal">
 </p>
 
-<p align=center>
-  <a href="https://apps.microsoft.com/detail/9NPK6KSDLC81">
-  	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
-  </a>
-</p>
-
-> [!NOTE]
->
-> The Microsoft store page has been down due to crashes caused by a bug still in investigation, but you may still install the extension directly from Command Palette or from the [Release page](https://github.com/LioQing/llm-extension-for-cmd-pal/releases).
-
 ## Demo Video
 
 https://github.com/user-attachments/assets/d8b707a9-b086-470f-8d01-7508091ebd9d
@@ -32,6 +22,30 @@ It currently supports the following APIs:
 - [Azure OpenAI](https://learn.microsoft.com/en-us/azure/cognitive-services/openai/overview)
 - [Google](https://aistudio.google.com/)
 - [Mistral](https://console.mistral.ai/)
+
+## Installation
+
+### PowerToys Command Palette
+
+You can find the extension by searching "Find Command Palette extensions from ..." in Command Palette and install the extension directly.
+
+### WinGet
+
+```
+winget install LioQing.LLMExtensionforCommandPalette
+```
+
+### Microsoft Store
+
+<p align=center>
+  <a href="https://apps.microsoft.com/detail/9NPK6KSDLC81">
+  	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
+  </a>
+</p>
+
+### GitHub Releases
+
+[GitHub Releases](https://github.com/LioQing/llm-extension-for-cmd-pal/releases)
 
 ## Setup
 
