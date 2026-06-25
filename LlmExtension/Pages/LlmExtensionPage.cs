@@ -8,6 +8,8 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Microsoft.CommandPalette.Extensions;
 using Microsoft.CommandPalette.Extensions.Toolkit;
 using Windows.Foundation;
@@ -677,88 +679,96 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
         .ToArray();
     }
 
+    /// <summary>
+    ///     Shared send-message logic used by both the search-box path (SendMessageCommand)
+    ///     and the multiline form path (MultilineInputPage callback).
+    /// </summary>
+    private async Task SendMessageAsync(string userText)
+    {
+        if (IsLoading) return;
+        if (string.IsNullOrWhiteSpace(userText)) return;
+
+        var currentMessage = _messages[0];
+        try
+        {
+            currentMessage.User = userText;
+            IsLoading = true;
+
+            SearchText = "";
+            OnPropertyChanged(nameof(SearchText));
+
+            UpdateMessagesMemo();
+            RaiseItemsChanged();
+
+            await foreach (var response in _client.Chat(_messages))
+            {
+                currentMessage.Assistant += response;
+                UpdateMessagesMemo();
+                RaiseItemsChanged();
+            }
+
+            SearchText = "";
+            _messages.Insert(0, new() { User = "", Assistant = "" });
+        }
+        catch (Exception ex) when (!_client.Config.Debug && (ex is HttpRequestException || ex is ClientResultException))
+        {
+            ErrorToast(
+                $"Error calling API over HTTP, is there a '{_client.Config.Service}' server running and accepting connections " +
+                $"at '{_client.Config.Url}' with model '{_client.Config.Model}'? Or perhaps the API key is incorrect?"
+                );
+        }
+        catch (HttpOperationException ex) when (_client.Config.Debug)
+        {
+            var dataString = "";
+            foreach (DictionaryEntry item in ex.Data)
+            {
+                dataString += $"{item.Key}: {item.Value}\n";
+            }
+
+            if (!string.IsNullOrEmpty(dataString))
+            {
+                dataString = "\n" + dataString;
+            }
+
+            ErrorToast($"An HTTP error occurred: {ex.Message} with inner exception {ex.InnerException}{dataString}");
+        }
+        catch (Exception ex)
+        {
+            ErrorToast(_client.Config.Debug ? ex.ToString() : "An error occurred when attempting to chat with LLM");
+        }
+        finally
+        {
+            IsLoading = false;
+            UpdateMessagesMemo();
+            RaiseItemsChanged();
+        }
+    }
+
     private void UpdateMessagesMemo()
     {
-        _messagesMemo = _messages.SelectMany<ChatMessage, ListItem>((m, index) =>
+        var sendItem = new List<ListItem>();
+        var historyItems = new List<ListItem>();
+
+        foreach (var (m, index) in _messages.Select((m, i) => (m, i)))
         {
             if (string.IsNullOrEmpty(m.Assistant))
             {
                 if (string.IsNullOrEmpty(m.User))
                 {
-                    return [];
+                    // Idle slot — no item; compose button is inserted separately below.
                 }
                 else if (index == 0)
                 {
-                    var command = new SendMessageCommand() { Debug = _client.Config.Debug };
                     if (!IsLoading)
                     {
-                        command.SendMessage += async (sender, args) =>
-                        {
-                            if (IsLoading) return;
-                            try
-                            {
-                                _messages[0].User = SearchText;
-                                IsLoading = true;
-
-                                SearchText = "";
-                                OnPropertyChanged(nameof(SearchText));
-
-                                UpdateMessagesMemo();
-                                RaiseItemsChanged();
-
-                                await foreach (var response in _client.Chat(_messages))
-                                {
-                                    m.Assistant += response;
-                                    UpdateMessagesMemo();
-                                    RaiseItemsChanged();
-                                }
-
-                                SearchText = "";
-                                _messages.Insert(0, new() { User = "", Assistant = "" });
-                                UpdateMessagesMemo();
-                                RaiseItemsChanged();
-                            }
-                            catch (Exception ex) when (!_client.Config.Debug && (ex is HttpRequestException || ex is ClientResultException))
-                            {
-                                ErrorToast(
-                                    $"Error calling API over HTTP, is there a '{_client.Config.Service}' server running and accepting connections " +
-                                    $"at '{_client.Config.Url}' with model '{_client.Config.Model}'? Or perhaps the API key is incorrect?"
-                                );
-                            }
-                            catch (HttpOperationException ex) when (_client.Config.Debug)
-                            {
-                                var dataString = "";
-                                foreach (DictionaryEntry item in ex.Data)
-                                {
-                                    dataString += $"{item.Key}: {item.Value}\n";
-                                }
-
-                                if (!string.IsNullOrEmpty(dataString))
-                                {
-                                    dataString = "\n" + dataString;
-                                }
-
-                                ErrorToast($"An HTTP error occurred: {ex.Message} with inner exception {ex.InnerException}{dataString}");
-                            }
-                            catch (Exception ex)
-                            {
-                                ErrorToast(_client.Config.Debug ? ex.ToString() : "An error occurred when attempting to chat with LLM");
-                            }
-                            finally
-                            {
-                                IsLoading = false;
-                            }
-                        };
+                        var command = new SendMessageCommand() { Debug = _client.Config.Debug };
+                        command.SendMessage += async (sender, args) => await SendMessageAsync(SearchText);
+                        sendItem.Add(new ListItem(command) { Title = "Press enter to send" });
                     }
-
-                    return [new ListItem(command) { Title = "Press enter to send" }];
                 }
                 else
                 {
-                    return [new ListItem(new DetailedResponsePage(m.User, "No response received.")) {
-                        Title = m.User,
-                        Subtitle = "No response received."
-                    }];
+                    historyItems.Add(new ListItem(new DetailedResponsePage(m.User, "No response received.")) { Title = m.User, Subtitle = "No response received." });
                 }
             }
             else
@@ -778,9 +788,20 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                     };
                 }
 
-                return [item];
+                historyItems.Add(item);
             }
-        }).ToArray();
+        }
+
+        if (!IsLoading)
+        {
+            var multilinePage = new MultilineInputPage(text => _ = SendMessageAsync(text));
+            var composeItem = new ListItem(multilinePage) { Title = "Compose multiline message", Subtitle = "Open a form to type or paste multiline text" };
+            _messagesMemo = sendItem.Concat(historyItems).Concat(new[] { composeItem }).ToArray();
+        }
+        else
+        {
+            _messagesMemo = historyItems.ToArray();
+        }
     }
 
     internal static void ErrorToast(string message)
@@ -906,5 +927,87 @@ internal sealed partial class MarkdownPage : ContentPage
         return [
             new MarkdownContent(Content),
         ];
+    }
+}
+
+/// <summary>
+///     A ContentPage that hosts a multiline text input form.
+///     Navigated to when the user wants to paste or type a multiline message.
+///     On submit, fires the OnMessageSubmitted callback with the entered text.
+/// </summary>
+internal sealed partial class MultilineInputPage : ContentPage
+{
+    private readonly MultilineInputForm _form;
+
+    public MultilineInputPage(Action<string> onMessageSubmitted)
+    {
+        Title = "Compose Message";
+        Name = "Compose multiline message";
+        Icon = new IconInfo("\uE932"); // Segoe UI "Edit" glyph
+
+        _form = new MultilineInputForm(onMessageSubmitted);
+    }
+
+    public override IContent[] GetContent()
+    {
+        return [_form];
+    }
+}
+
+/// <summary>
+///     A FormContent using an Adaptive Card with isMultiline=true on the text input.
+/// </summary>
+internal sealed partial class MultilineInputForm : FormContent
+{
+    private readonly Action<string> _onMessageSubmitted;
+
+    public MultilineInputForm(Action<string> onMessageSubmitted)
+    {
+        _onMessageSubmitted = onMessageSubmitted;
+
+        // Adaptive Card JSON with "isMultiline": true renders a multiline textarea.
+        TemplateJson = """
+        {
+            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+            "type": "AdaptiveCard",
+            "version": "1.6",
+            "body": [
+                {
+                    "type": "Input.Text",
+                    "id": "message",
+                    "label": "Message",
+                    "placeholder": "Type or paste your multiline message here...",
+                    "isMultiline": true,
+                    "isRequired": true,
+                    "errorMessage": "Message cannot be empty"
+                }
+            ],
+            "actions": [
+                {
+                    "type": "Action.Submit",
+                    "title": "Send"
+                }
+            ]
+        }
+        """;
+    }
+
+    public override CommandResult SubmitForm(string payload)
+    {
+        var formInput = JsonNode.Parse(payload)?.AsObject();
+        if (formInput == null)
+        {
+            return CommandResult.GoBack();
+        }
+
+        var message = formInput["message"]?.ToString();
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return CommandResult.KeepOpen();
+        }
+
+        _onMessageSubmitted(message);
+
+        return CommandResult.GoBack();
     }
 }
