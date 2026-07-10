@@ -124,13 +124,13 @@ internal sealed partial class LlmExtensionPage : DynamicListPage
                 {
                     MaxTokens = Config.MaxTokens,
                     Temperature = Config.Temperature,
-                    TopP = Config.TopP,
+                    TopP = Config.TopP == 1.0f ? null : Config.TopP,
                 },
                 LlmExtensionPage.Service.AzureOpenAI => new AzureOpenAIPromptExecutionSettings()
                 {
                     MaxTokens = Config.MaxTokens,
                     Temperature = Config.Temperature,
-                    TopP = Config.TopP,
+                    TopP = Config.TopP == 1.0f ? null : Config.TopP,
                 },
                 LlmExtensionPage.Service.Google => new GeminiPromptExecutionSettings()
                 {
